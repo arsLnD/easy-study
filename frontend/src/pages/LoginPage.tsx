@@ -26,8 +26,15 @@ export function LoginPage() {
       const user = await fetchMe();
       setUser(user);
       navigate("/plan");
-    } catch {
-      setError("Неверный email или пароль");
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 401) {
+        setError("Неверный email или пароль");
+      } else if (status) {
+        setError(`Сервер недоступен (код ${status}). Попробуйте ещё раз.`);
+      } else {
+        setError("Не удалось связаться с сервером. Проверьте подключение к интернету.");
+      }
     } finally {
       setLoading(false);
     }

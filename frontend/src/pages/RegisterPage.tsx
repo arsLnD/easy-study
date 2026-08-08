@@ -34,10 +34,13 @@ export function RegisterPage() {
       setUser(user);
       navigate("/plan");
     } catch (err: any) {
-      if (err?.response?.status === 409) {
+      const status = err?.response?.status;
+      if (status === 409) {
         setError("Пользователь с таким email уже зарегистрирован");
+      } else if (status) {
+        setError(`Не удалось создать аккаунт (код ${status}). Попробуйте ещё раз.`);
       } else {
-        setError("Не удалось создать аккаунт. Проверьте данные.");
+        setError("Не удалось связаться с сервером. Проверьте подключение к интернету.");
       }
     } finally {
       setLoading(false);
