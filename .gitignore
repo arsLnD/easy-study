@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Секреты окружения
+backend/.env
+.env
+
+# Node / фронтенд
+frontend/node_modules/
+frontend/dist/
+frontend/dev-dist/
+
+# IDE
+.idea/
+
+# ОС
+.DS_Store
+Thumbs.db

@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-background text-textPrimary antialiased;
+  font-family: "Manrope", "Inter", sans-serif;
+  /* Не даём тексту/интерфейсу выделяться при обычном тапе - привычнее для приложения */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Тонкий скроллбар в тёмной теме, чтобы не бил по глазам светлой полосой */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a35;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+input,
+button,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Убираем стандартные стрелочки у числовых полей ввода сумм */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}

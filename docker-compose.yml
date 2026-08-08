@@ -1,0 +1,50 @@
+# Полный локальный стек Plans/Finance: PostgreSQL + backend (FastAPI) + frontend (React, отдаётся nginx).
+#
+# Запуск:            docker compose up --build
+# Приложение:        http://localhost:8080
+# API документация:  http://localhost:8000/docs (автогенерируется FastAPI)
+#
+# При первом старте backend-контейнер сам применяет миграции Alembic и
+# заполняет базу стартовыми категориями/цитатами (см. backend/Dockerfile).
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plans_user
+      POSTGRES_PASSWORD: plans_password
+      POSTGRES_DB: plans_finance
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plans_user -d plans_finance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://plans_user:plans_password@db:5432/plans_finance
+      JWT_SECRET_KEY: local-dev-secret-change-me
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  db_data:
