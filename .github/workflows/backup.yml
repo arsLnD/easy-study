@@ -1,0 +1,48 @@
+name: Daily encrypted DB backup
+
+# Ежедневно делает pg_dump продовой базы (Neon), шифрует его AES-256
+# и заливает в приватный репозиторий arsLnD/plans-finance-backups.
+# Хранятся последние 14 дампов, старые автоматически удаляются.
+#
+# Восстановление: см. backend/docs/RESTORE_BACKUP.md
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC каждый день
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        run: |
+          set -euo pipefail
+          pg_dump "${{ secrets.BACKUP_DATABASE_URL }}" --format=custom --file=dump.sql
+
+      - name: Encrypt dump
+        run: |
+          set -euo pipefail
+          openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in dump.sql \
+            -out "backup-$(date -u +%Y-%m-%d).dump.enc" \
+            -pass pass:"${{ secrets.BACKUP_ENCRYPTION_KEY }}"
+          rm dump.sql
+
+      - name: Push encrypted backup to private backups repo
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${{ secrets.BACKUP_REPO_TOKEN }}@github.com/arsLnD/plans-finance-backups.git" backups-repo
+          cp backup-*.dump.enc backups-repo/
+          cd backups-repo
+          git config user.name "backup-bot"
+          git config user.email "backup-bot@users.noreply.github.com"
+          git add "backup-$(date -u +%Y-%m-%d).dump.enc"
+          git commit -m "Backup $(date -u +%Y-%m-%d)"
+          # Оставляем только последние 14 дампов, остальные удаляем
+          ls -1 backup-*.dump.enc | sort | head -n -14 | xargs -r git rm --
+          git commit -m "Prune old backups" --allow-empty
+          git push origin main
