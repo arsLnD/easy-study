@@ -1,10 +1,15 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Wallet2 } from "lucide-react";
 import { fetchMe, register } from "@/api/auth";
 import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
 import { useAuthStore } from "@/store/authStore";
+
+// Бесплатный хостинг backend'а "засыпает" при неактивности и просыпается
+// до ~40 секунд на первый запрос — показываем пояснение, чтобы это не
+// выглядело как зависший/сломанный сайт.
+const SLOW_SERVER_HINT_DELAY_MS = 4000;
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -16,6 +21,8 @@ export function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [slowServerHint, setSlowServerHint] = useState(false);
+  const slowHintTimer = useRef<ReturnType<typeof setTimeout>>();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -27,6 +34,8 @@ export function RegisterPage() {
     }
 
     setLoading(true);
+    setSlowServerHint(false);
+    slowHintTimer.current = setTimeout(() => setSlowServerHint(true), SLOW_SERVER_HINT_DELAY_MS);
     try {
       const tokens = await register(email, password, fullName);
       setTokens(tokens.access_token, tokens.refresh_token);
@@ -43,6 +52,8 @@ export function RegisterPage() {
         setError("Не удалось связаться с сервером. Проверьте подключение к интернету.");
       }
     } finally {
+      clearTimeout(slowHintTimer.current);
+      setSlowServerHint(false);
       setLoading(false);
     }
   }
@@ -84,6 +95,11 @@ export function RegisterPage() {
           placeholder="Минимум 8 символов"
         />
         {error && <p className="text-sm text-expense">{error}</p>}
+        {slowServerHint && (
+          <p className="text-sm text-textSecondary">
+            Сервер просыпается после простоя, это может занять до минуты — подождите, пожалуйста
+          </p>
+        )}
         <Button type="submit" fullWidth disabled={loading}>
           {loading ? "Создаём аккаунт..." : "Зарегистрироваться"}
         </Button>
