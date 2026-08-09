@@ -1,5 +1,5 @@
 import { apiClient } from "@/api/client";
-import type { Goal, GoalContribution, GoalContributionWithGoal } from "@/types";
+import type { Goal } from "@/types";
 
 export async function listGoals(): Promise<Goal[]> {
   const { data } = await apiClient.get<Goal[]>("/goals");
@@ -18,34 +18,21 @@ export async function createGoal(payload: {
   return data;
 }
 
-export async function updateGoal(id: string, payload: Partial<Goal>): Promise<Goal> {
+export async function updateGoal(
+  id: string,
+  payload: Partial<{
+    name: string;
+    icon: string;
+    color: string;
+    target_amount: string;
+    deadline: string | null;
+    status: string;
+  }>
+): Promise<Goal> {
   const { data } = await apiClient.patch<Goal>(`/goals/${id}`, payload);
   return data;
 }
 
 export async function deleteGoal(id: string): Promise<void> {
   await apiClient.delete(`/goals/${id}`);
-}
-
-export async function addContribution(
-  goalId: string,
-  payload: { amount: string; contributed_on: string; note?: string }
-): Promise<Goal> {
-  const { data } = await apiClient.post<Goal>(`/goals/${goalId}/contributions`, payload);
-  return data;
-}
-
-export async function listContributions(goalId: string): Promise<GoalContribution[]> {
-  const { data } = await apiClient.get<GoalContribution[]>(`/goals/${goalId}/contributions`);
-  return data;
-}
-
-export async function listAllContributions(
-  dateFrom: string,
-  dateTo: string
-): Promise<GoalContributionWithGoal[]> {
-  const { data } = await apiClient.get<GoalContributionWithGoal[]>("/goals/contributions", {
-    params: { date_from: dateFrom, date_to: dateTo },
-  });
-  return data;
 }

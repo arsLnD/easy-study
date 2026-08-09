@@ -7,7 +7,7 @@
 """
 
 from app.models.category import Category, CategoryType
-from app.models.goal import Goal, GoalContribution, GoalStatus
+from app.models.goal import Goal, GoalStatus
 from app.models.plan import MonthlyPlan, PlanAllocation
 from app.models.quote import MotivationalQuote
 from app.models.transaction import Transaction
@@ -22,7 +22,6 @@ __all__ = [
     "MonthlyPlan",
     "PlanAllocation",
     "Goal",
-    "GoalContribution",
     "GoalStatus",
     "Transaction",
     "MotivationalQuote",

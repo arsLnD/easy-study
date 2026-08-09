@@ -14,12 +14,14 @@ export function DayDetailCard({
   transactions,
   currency,
   onDelete,
+  onEdit,
   onAddForDay,
 }: {
   dayIso: string;
   transactions: Transaction[];
   currency: string;
   onDelete: (id: string) => void;
+  onEdit: (transaction: Transaction) => void;
   onAddForDay: (dayIso: string) => void;
 }) {
   const dayTransactions = transactions.filter((tx) => tx.occurred_on === dayIso);
@@ -45,7 +47,7 @@ export function DayDetailCard({
         </div>
       )}
 
-      <TransactionList transactions={dayTransactions} onDelete={onDelete} />
+      <TransactionList transactions={dayTransactions} onDelete={onDelete} onEdit={onEdit} />
     </div>
   );
 }

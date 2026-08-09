@@ -29,3 +29,8 @@ class CategoryRead(CategoryBase):
     id: uuid.UUID
     is_preset: bool
     user_id: uuid.UUID | None = None
+    # Заполнено, если категория служебная — привязана к конкретной цели
+    # накопления. Фронтенд использует это, чтобы показать прогресс цели прямо
+    # в строке категории плана и пометить операции в этой категории как
+    # "пополнение цели".
+    linked_goal_id: uuid.UUID | None = None

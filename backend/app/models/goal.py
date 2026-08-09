@@ -2,14 +2,18 @@
 Финансовые цели пользователя (накопить на отпуск, подушку безопасности и т.д.)
 
 Goal — сама цель: название, сумма цели, срок, текущий накопленный прогресс.
-GoalContribution — история пополнений цели, привязанная (опционально) к
-конкретному месячному плану, чтобы можно было построить историю "сколько
-я отложил на цель X в каждом месяце" и показывать это в таблице трекера.
 
-current_amount хранится денормализованно (как сумма всех contributions) для
-быстрого чтения на главном экране без лишних JOIN-агрегаций на каждый рендер;
-пересчитывается транзакционно при каждом добавлении/удалении contribution
-(см. app/api/routes/goals.py).
+У каждой цели есть привязанная категория трат (Category.linked_goal_id,
+создаётся автоматически в app/api/routes/goals.py при создании цели).
+Пополнение цели — это ОБЫЧНАЯ трата (Transaction) в этой категории, а не
+отдельная сущность вне плана: так пополнения попадают в общий список
+операций, учитываются в плане/факте по категориям и их можно редактировать
+как любую другую операцию (см. app/api/routes/transactions.py).
+
+current_amount хранится денормализованно (как сумма трат в категории цели)
+для быстрого чтения на главном экране без лишних JOIN-агрегаций на каждый
+рендер; пересчитывается транзакционно при каждом создании/изменении/удалении
+транзакции в категории цели (см. _sync_goal_amount в app/api/routes/transactions.py).
 """
 
 import enum
@@ -48,23 +52,4 @@ class Goal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="goals")
-    contributions: Mapped[list["GoalContribution"]] = relationship(
-        back_populates="goal", cascade="all, delete-orphan"
-    )
-
-
-class GoalContribution(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "goal_contributions"
-
-    goal_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("goals.id", ondelete="CASCADE"), nullable=False
-    )
-    plan_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("monthly_plans.id", ondelete="SET NULL"), nullable=True
-    )
-    amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
-    contributed_on: Mapped[date] = mapped_column(Date, nullable=False)
-    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    goal: Mapped["Goal"] = relationship(back_populates="contributions")
-    plan: Mapped["MonthlyPlan"] = relationship(back_populates="goal_contributions")
+    category: Mapped["Category | None"] = relationship(back_populates="linked_goal", uselist=False)

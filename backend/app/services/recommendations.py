@@ -3,6 +3,10 @@
 выделить на каждую категорию и сколько отложить на цели (п.2 требований:
 "приложение должно помогать с выбором пользователю").
 
+Отчисления на цели больше не отдельная сумма — цель — это такая же категория
+расходов (Category.linked_goal_id), поэтому рекомендация просто добавляет ей
+item с bucket="savings" наравне с обычными категориями (см. _bucket_for).
+
 Логика в два уровня:
 
 1. Если у пользователя ЕСТЬ история трат за последние 3 месяца — используем
@@ -18,7 +22,9 @@
        категории расходов).
      - 20% дохода -> сбережения и цели.
    Внутри "обязательных" и "необязательных" сумма делится пропорционально
-   между существующими категориями пользователя.
+   между существующими категориями пользователя. Сбережения распределяются
+   между активными целями пропорционально тому, сколько им ещё не хватает
+   до цели (см. _distribute_savings_to_goals).
 
 Правило 50/30/20 — общепризнанный, простой ориентир из личных финансов
 (его популяризировала сенатор США Элизабет Уоррен в книге "All Your
@@ -27,7 +33,6 @@ Worth"), поэтому это разумная нейтральная отпр�
 """
 
 import uuid
-from collections import defaultdict
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -52,6 +57,12 @@ def _round_money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _bucket_for(category: Category) -> str:
+    if category.linked_goal_id is not None:
+        return "savings"
+    return "essential" if category.is_essential else "lifestyle"
+
+
 async def _get_user_expense_categories(db: AsyncSession, user_id: uuid.UUID) -> list[Category]:
     result = await db.execute(
         select(Category).where(
@@ -60,6 +71,53 @@ async def _get_user_expense_categories(db: AsyncSession, user_id: uuid.UUID) -> 
         )
     )
     return list(result.scalars().all())
+
+
+def _distribute_savings_to_goals(
+    goal_categories: list[Category],
+    goals_by_id: dict[uuid.UUID, Goal],
+    pool: Decimal,
+    based_on: str,
+) -> list[RecommendationCategoryItem]:
+    """
+    Делит `pool` денег между служебными категориями активных целей
+    пропорционально тому, сколько каждой цели ещё не хватает до
+    target_amount (никакого смысла продолжать откладывать сверх цели).
+    """
+    if pool <= 0:
+        return []
+
+    needs: dict[uuid.UUID, Decimal] = {}
+    for category in goal_categories:
+        goal = goals_by_id.get(category.linked_goal_id) if category.linked_goal_id else None
+        if goal is None or goal.status != GoalStatus.ACTIVE:
+            continue
+        remaining = Decimal(goal.target_amount) - Decimal(goal.current_amount)
+        if remaining > 0:
+            needs[category.id] = remaining
+
+    if not needs:
+        return []
+
+    total_need = sum(needs.values(), Decimal("0"))
+    items: list[RecommendationCategoryItem] = []
+    for category in goal_categories:
+        need = needs.get(category.id)
+        if need is None:
+            continue
+        share = _round_money(min(need, pool * (need / total_need)))
+        if share <= 0:
+            continue
+        items.append(
+            RecommendationCategoryItem(
+                category_id=category.id,
+                category_name=category.name,
+                suggested_amount=share,
+                bucket="savings",
+                based_on=based_on,
+            )
+        )
+    return items
 
 
 async def _get_recent_average_spending(
@@ -79,10 +137,12 @@ async def _get_recent_average_spending(
     return {row[0]: Decimal(row[1]) / HISTORY_MONTHS for row in result.all()}
 
 
-async def _get_active_goals_context(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
-    result = await db.execute(
-        select(Goal).where(Goal.user_id == user_id, Goal.status == GoalStatus.ACTIVE)
-    )
+async def _get_active_goals(db: AsyncSession, user_id: uuid.UUID) -> list[Goal]:
+    result = await db.execute(select(Goal).where(Goal.user_id == user_id, Goal.status == GoalStatus.ACTIVE))
+    return list(result.scalars().all())
+
+
+def _goals_context(goals: list[Goal]) -> list[dict]:
     return [
         {
             "name": g.name,
@@ -90,7 +150,7 @@ async def _get_active_goals_context(db: AsyncSession, user_id: uuid.UUID) -> lis
             "target": Decimal(g.target_amount),
             "currency": g.currency,
         }
-        for g in result.scalars().all()
+        for g in goals
     ]
 
 
@@ -111,32 +171,39 @@ async def build_budget_recommendation(
     reference_month = reference_month or date.today()
     categories = await _get_user_expense_categories(db, user_id)
     history = await _get_recent_average_spending(db, user_id, reference_month)
-    goals_context = await _get_active_goals_context(db, user_id)
+    goals = await _get_active_goals(db, user_id)
 
-    ai_result = await get_ai_recommendation(total_income, currency, categories, history, goals_context)
+    ai_result = await get_ai_recommendation(total_income, currency, categories, history, _goals_context(goals))
     if ai_result is not None:
         return ai_result
 
-    return _build_rule_based_recommendation(categories, history, total_income)
+    goals_by_id = {g.id: g for g in goals}
+    return _build_rule_based_recommendation(categories, history, total_income, goals_by_id)
 
 
 def _build_rule_based_recommendation(
     categories: list[Category],
     history: dict[uuid.UUID, Decimal],
     total_income: Decimal,
+    goals_by_id: dict[uuid.UUID, Goal],
 ) -> RecommendationResponse:
-    has_enough_history = sum(history.values(), Decimal("0")) > 0
+    goal_categories = [c for c in categories if c.linked_goal_id is not None]
+    spending_categories = [c for c in categories if c.linked_goal_id is None]
+
+    has_enough_history = sum((history.get(c.id, Decimal("0")) for c in spending_categories), Decimal("0")) > 0
 
     items: list[RecommendationCategoryItem] = []
 
     if has_enough_history:
-        total_history = sum(history.values(), Decimal("0")) or Decimal("1")
+        total_history = sum((history.get(c.id, Decimal("0")) for c in spending_categories), Decimal("0")) or Decimal(
+            "1"
+        )
         # Масштабируем историю так, чтобы уложиться в 80% дохода (оставляя
         # минимум 20% на сбережения), сохраняя пропорции между категориями.
         spendable = total_income * (Decimal("1") - SAVINGS_SHARE)
         scale = min(Decimal("1"), spendable / total_history) if total_history else Decimal("1")
 
-        for category in categories:
+        for category in spending_categories:
             avg = history.get(category.id)
             if not avg:
                 continue
@@ -146,26 +213,35 @@ def _build_rule_based_recommendation(
                     category_id=category.id,
                     category_name=category.name,
                     suggested_amount=suggested,
-                    bucket="essential" if category.is_essential else "lifestyle",
+                    bucket=_bucket_for(category),
                     based_on="history",
                 )
             )
 
         essential_total = sum((i.suggested_amount for i in items if i.bucket == "essential"), Decimal("0"))
         lifestyle_total = sum((i.suggested_amount for i in items if i.bucket == "lifestyle"), Decimal("0"))
-        savings_total = _round_money(total_income - essential_total - lifestyle_total)
+        leftover = max(Decimal("0"), _round_money(total_income - essential_total - lifestyle_total))
+
+        savings_items = _distribute_savings_to_goals(goal_categories, goals_by_id, leftover, "history")
+        items.extend(savings_items)
+        savings_total = sum((i.suggested_amount for i in savings_items), Decimal("0"))
+
         explanation = (
             f"Рекомендация основана на ваших средних тратах за последние "
             f"{HISTORY_MONTHS} месяца, масштабированных под указанный доход "
-            f"так, чтобы гарантированно отложить не менее {int(SAVINGS_SHARE * 100)}% на цели."
+            f"так, чтобы гарантированно осталось не менее {int(SAVINGS_SHARE * 100)}% на сбережения."
         )
+        if not goal_categories and leftover > 0:
+            explanation += " Создайте цель в разделе «Настройки → Цели» — тогда мы предложим, сколько на неё отложить."
+        elif goal_categories and not savings_items:
+            explanation += " Похоже, все ваши активные цели уже достигнуты — можете добавить новую."
     else:
-        essential_categories = [c for c in categories if c.is_essential]
-        lifestyle_categories = [c for c in categories if not c.is_essential]
+        essential_categories = [c for c in spending_categories if c.is_essential]
+        lifestyle_categories = [c for c in spending_categories if not c.is_essential]
 
         essential_total = _round_money(total_income * ESSENTIAL_SHARE)
         lifestyle_total = _round_money(total_income * LIFESTYLE_SHARE)
-        savings_total = _round_money(total_income - essential_total - lifestyle_total)
+        savings_pool = _round_money(total_income - essential_total - lifestyle_total)
 
         def _distribute(bucket_categories: list[Category], bucket_total: Decimal, bucket_name: str):
             if not bucket_categories:
@@ -185,13 +261,19 @@ def _build_rule_based_recommendation(
         _distribute(essential_categories, essential_total, "essential")
         _distribute(lifestyle_categories, lifestyle_total, "lifestyle")
 
+        savings_items = _distribute_savings_to_goals(goal_categories, goals_by_id, savings_pool, "rule_50_30_20")
+        items.extend(savings_items)
+        savings_total = sum((i.suggested_amount for i in savings_items), Decimal("0"))
+
         explanation = (
             "У вас пока нет истории трат, поэтому мы использовали классическое "
             "правило бюджетирования 50/30/20: 50% дохода — на обязательные "
-            "траты, 30% — на необязательные, 20% — на сбережения и цели. "
+            "траты, 30% — на необязательные, 20% — на сбережения. "
             "Как только вы начнёте вносить траты, рекомендации станут точнее "
             "и будут основаны на вашем реальном поведении."
         )
+        if not goal_categories:
+            explanation += " Создайте цель в разделе «Настройки → Цели», чтобы мы предложили, сколько на неё отложить."
 
     return RecommendationResponse(
         essential_total=essential_total,

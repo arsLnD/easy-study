@@ -5,10 +5,21 @@ import { Input } from "@/components/common/Input";
 import { Select } from "@/components/common/Select";
 import { todayIso } from "@/utils/format";
 
+interface InitialValues {
+  type: CategoryType;
+  categoryId: string;
+  amount: string;
+  description: string;
+  occurredOn: string;
+}
+
 interface Props {
   categories: Category[];
   currency: string;
   defaultDate?: string;
+  /** Если передано — форма работает в режиме редактирования существующей операции. */
+  initial?: InitialValues;
+  submitLabel?: string;
   onSubmit: (payload: {
     category_id: string;
     type: CategoryType;
@@ -19,12 +30,12 @@ interface Props {
   }) => Promise<void>;
 }
 
-export function TransactionForm({ categories, currency, defaultDate, onSubmit }: Props) {
-  const [type, setType] = useState<CategoryType>("expense");
-  const [categoryId, setCategoryId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [occurredOn, setOccurredOn] = useState(defaultDate ?? todayIso());
+export function TransactionForm({ categories, currency, defaultDate, initial, submitLabel, onSubmit }: Props) {
+  const [type, setType] = useState<CategoryType>(initial?.type ?? "expense");
+  const [categoryId, setCategoryId] = useState(initial?.categoryId ?? "");
+  const [amount, setAmount] = useState(initial?.amount ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [occurredOn, setOccurredOn] = useState(initial?.occurredOn ?? defaultDate ?? todayIso());
   const [submitting, setSubmitting] = useState(false);
 
   const filteredCategories = categories.filter((c) => c.type === type);
@@ -55,7 +66,8 @@ export function TransactionForm({ categories, currency, defaultDate, onSubmit }:
         <button
           type="button"
           onClick={() => setType("expense")}
-          className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+          disabled={!!initial}
+          className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
             type === "expense" ? "bg-expense text-white" : "text-textSecondary"
           }`}
         >
@@ -64,7 +76,8 @@ export function TransactionForm({ categories, currency, defaultDate, onSubmit }:
         <button
           type="button"
           onClick={() => setType("income")}
-          className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+          disabled={!!initial}
+          className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
             type === "income" ? "bg-income text-white" : "text-textSecondary"
           }`}
         >
@@ -79,6 +92,7 @@ export function TransactionForm({ categories, currency, defaultDate, onSubmit }:
         {filteredCategories.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name}
+            {c.linked_goal_id ? " · цель накопления" : ""}
           </option>
         ))}
       </Select>
@@ -110,7 +124,7 @@ export function TransactionForm({ categories, currency, defaultDate, onSubmit }:
       />
 
       <Button type="submit" fullWidth disabled={submitting} variant={type === "expense" ? "primary" : "primary"}>
-        {submitting ? "Сохраняем..." : "Добавить"}
+        {submitting ? "Сохраняем..." : submitLabel ?? "Добавить"}
       </Button>
     </form>
   );

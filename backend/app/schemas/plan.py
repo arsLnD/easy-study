@@ -24,23 +24,10 @@ class MonthlyPlanCreate(BaseModel):
     month: date  # любой день месяца; сервер нормализует к первому числу
     currency: str = Field(default="RUB", min_length=3, max_length=3)
     total_income: Decimal = Field(ge=0)
+    # Отчисления на цели — это такие же строки, как обычная категория трат,
+    # только category_id указывает на служебную категорию цели
+    # (Category.linked_goal_id), см. app/models/goal.py.
     allocations: list[PlanAllocationInput] = Field(default_factory=list)
-    # Суммы, которые пользователь хочет отложить на свои цели в этом месяце.
-    # Каждая запись при сохранении плана превращается в GoalContribution,
-    # привязанную к этому плану (см. app/api/routes/plans.py).
-    goal_contributions: list["PlanGoalContributionInput"] = Field(default_factory=list)
-
-
-class PlanGoalContributionInput(BaseModel):
-    goal_id: uuid.UUID
-    amount: Decimal = Field(ge=0)
-
-
-class PlanGoalContributionRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: uuid.UUID
-    goal_id: uuid.UUID
-    amount: Decimal
 
 
 class MonthlyPlanRead(BaseModel):
@@ -50,7 +37,6 @@ class MonthlyPlanRead(BaseModel):
     currency: str
     total_income: Decimal
     allocations: list[PlanAllocationRead] = Field(default_factory=list)
-    goal_contributions: list[PlanGoalContributionRead] = Field(default_factory=list)
 
 
 class RecommendationRequest(BaseModel):

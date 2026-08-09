@@ -22,6 +22,19 @@ export async function createTransaction(payload: {
   return data;
 }
 
+export async function updateTransaction(
+  id: string,
+  payload: Partial<{
+    category_id: string;
+    amount: string;
+    description: string | null;
+    occurred_on: string;
+  }>
+): Promise<Transaction> {
+  const { data } = await apiClient.patch<Transaction>(`/transactions/${id}`, payload);
+  return data;
+}
+
 export async function deleteTransaction(id: string): Promise<void> {
   await apiClient.delete(`/transactions/${id}`);
 }

@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
 import { listCategories } from "@/api/categories";
-import { listAllContributions, listGoals } from "@/api/goals";
-import { createTransaction, deleteTransaction, getPeriodSummary, listTransactions } from "@/api/transactions";
+import { listGoals } from "@/api/goals";
+import {
+  createTransaction,
+  deleteTransaction,
+  getPeriodSummary,
+  listTransactions,
+  updateTransaction,
+} from "@/api/transactions";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { Card } from "@/components/common/Card";
@@ -47,11 +53,38 @@ function shiftMonth(monthIso: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+/** Экспорт операций месяца в CSV — можно открыть в Excel/Google Таблицах. */
+function exportTransactionsToCsv(transactions: Transaction[], monthLabel: string) {
+  const header = ["Дата", "Тип", "Категория", "Сумма", "Валюта", "Комментарий"];
+  const rows = transactions.map((tx) => [
+    tx.occurred_on,
+    tx.type === "income" ? "Доход" : "Трата",
+    tx.category?.name ?? "",
+    tx.amount,
+    tx.currency,
+    tx.description ?? "",
+  ]);
+  const csv = [header, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";"))
+    .join("\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `operations-${monthLabel}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 /**
  * Экран "Трекер" — работает только на дистанции месяца (по требованию:
  * базовый режим = сводка план/факт за текущий месяц), но позволяет вносить
  * операции и открывать любой конкретный день внутри месяца (вкладка "По
  * дням"), а также смотреть накопления по целям (вкладка "Накопления").
+ *
+ * Пополнение цели — это обычная Transaction в служебной категории цели
+ * (Category.linked_goal_id), поэтому "Накопления" ничего не запрашивает
+ * отдельно у API — вкладка просто фильтрует уже загруженный список операций.
  */
 export function TrackerPage() {
   const user = useAuthStore((s) => s.user);
@@ -68,27 +101,25 @@ export function TrackerPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [summary, setSummary] = useState<PeriodSummary | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [contributions, setContributions] = useState<GoalContributionWithGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [addDefaultDate, setAddDefaultDate] = useState(todayIso());
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   const { start, end } = useMemo(() => monthRange(month), [month]);
 
   async function refresh() {
     setLoading(true);
-    const [cats, goalsList, periodSummary, txs, contribs] = await Promise.all([
+    const [cats, goalsList, periodSummary, txs] = await Promise.all([
       listCategories(),
       listGoals(),
       getPeriodSummary(start, end),
       listTransactions({ date_from: start, date_to: end }),
-      listAllContributions(start, end),
     ]);
     setCategories(cats);
     setGoals(goalsList);
     setSummary(periodSummary);
     setTransactions(txs);
-    setContributions(contribs);
     setLoading(false);
   }
 
@@ -104,6 +135,18 @@ export function TrackerPage() {
     await refresh();
   }
 
+  async function handleUpdateTransaction(payload: Parameters<typeof createTransaction>[0]) {
+    if (!editingTransaction) return;
+    await updateTransaction(editingTransaction.id, {
+      category_id: payload.category_id,
+      amount: payload.amount,
+      description: payload.description ?? null,
+      occurred_on: payload.occurred_on,
+    });
+    setEditingTransaction(null);
+    await refresh();
+  }
+
   async function handleDeleteTransaction(id: string) {
     await deleteTransaction(id);
     await refresh();
@@ -113,6 +156,35 @@ export function TrackerPage() {
     setAddDefaultDate(defaultDate ?? todayIso());
     setModalOpen(true);
   }
+
+  // Пополнения целей — это транзакции в категориях с linked_goal_id. Строим
+  // их отдельным списком для вкладки "Накопления", не делая лишних запросов.
+  const goalByCategoryId = useMemo(() => {
+    const map = new Map<string, Goal>();
+    goals.forEach((g) => {
+      if (g.category_id) map.set(g.category_id, g);
+    });
+    return map;
+  }, [goals]);
+
+  const contributions: GoalContributionWithGoal[] = useMemo(() => {
+    return transactions
+      .filter((tx) => tx.category?.linked_goal_id)
+      .map((tx) => {
+        const goal = goalByCategoryId.get(tx.category_id);
+        return {
+          id: tx.id,
+          amount: tx.amount,
+          contributed_on: tx.occurred_on,
+          note: tx.description,
+          goal_id: goal?.id ?? tx.category_id,
+          goal_name: goal?.name ?? tx.category?.name ?? "Цель",
+          goal_icon: goal?.icon ?? tx.category?.icon ?? "target",
+          goal_color: goal?.color ?? tx.category?.color ?? "#00E38C",
+        };
+      })
+      .sort((a, b) => (a.contributed_on < b.contributed_on ? 1 : -1));
+  }, [transactions, goalByCategoryId]);
 
   const plannedIncome = parseFloat(summary?.total_income ?? "0");
   const actualIncome = parseFloat(summary?.total_income_actual ?? "0");
@@ -198,6 +270,7 @@ export function TrackerPage() {
                 transactions={transactions}
                 currency={currency}
                 onDelete={handleDeleteTransaction}
+                onEdit={setEditingTransaction}
                 onAddForDay={openAddModal}
               />
             )}
@@ -221,7 +294,23 @@ export function TrackerPage() {
           </div>
         ) : (
           <Card>
-            <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-base font-bold">Все операции</h2>
+              {transactions.length > 0 && (
+                <button
+                  onClick={() => exportTransactionsToCsv(transactions, month)}
+                  className="flex items-center gap-1 rounded-lg bg-surfaceMuted px-2.5 py-1.5 text-xs font-semibold
+                    text-textSecondary hover:text-textPrimary"
+                >
+                  <Download size={14} /> CSV
+                </button>
+              )}
+            </div>
+            <TransactionList
+              transactions={transactions}
+              onDelete={handleDeleteTransaction}
+              onEdit={setEditingTransaction}
+            />
           </Card>
         )}
       </div>
@@ -242,6 +331,24 @@ export function TrackerPage() {
             currency={currency}
             defaultDate={addDefaultDate}
             onSubmit={handleAddTransaction}
+          />
+        </Modal>
+      )}
+
+      {editingTransaction && (
+        <Modal title="Изменить операцию" onClose={() => setEditingTransaction(null)}>
+          <TransactionForm
+            categories={categories}
+            currency={editingTransaction.currency}
+            submitLabel="Сохранить изменения"
+            initial={{
+              type: editingTransaction.type,
+              categoryId: editingTransaction.category_id,
+              amount: editingTransaction.amount,
+              description: editingTransaction.description ?? "",
+              occurredOn: editingTransaction.occurred_on,
+            }}
+            onSubmit={handleUpdateTransaction}
           />
         </Modal>
       )}

@@ -7,7 +7,6 @@ import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { Loader } from "@/components/common/Loader";
 import { CategoryAllocationRow } from "@/components/plan/CategoryAllocationRow";
-import { GoalAllocationRow } from "@/components/plan/GoalAllocationRow";
 import { TopBar } from "@/components/layout/TopBar";
 import { AppShell } from "@/components/layout/AppShell";
 import { useAuthStore } from "@/store/authStore";
@@ -33,7 +32,6 @@ export function PlanPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [totalIncome, setTotalIncome] = useState("");
   const [allocations, setAllocations] = useState<Record<string, string>>({});
-  const [goalAllocations, setGoalAllocations] = useState<Record<string, string>>({});
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,13 +56,9 @@ export function PlanPage() {
           const allocMap: Record<string, string> = {};
           plan.allocations.forEach((a) => (allocMap[a.category_id] = a.planned_amount));
           setAllocations(allocMap);
-          const goalMap: Record<string, string> = {};
-          plan.goal_contributions.forEach((gc) => (goalMap[gc.goal_id] = gc.amount));
-          setGoalAllocations(goalMap);
         } else {
           setTotalIncome("");
           setAllocations({});
-          setGoalAllocations({});
         }
         setLoading(false);
       }
@@ -75,16 +69,24 @@ export function PlanPage() {
     };
   }, [month]);
 
+  // Категория цели накопления (Category.linked_goal_id) — такая же строка
+  // распределения, как обычная категория трат, просто помечена значком
+  // "Цель" и прогресс-баром (см. CategoryAllocationRow). Отдельного раздела
+  // "Отчисления на цели" больше нет: пополнение цели = трата в её категории.
+  const goalByCategoryId = useMemo(() => {
+    const map = new Map<string, Goal>();
+    goals.forEach((g) => {
+      if (g.category_id) map.set(g.category_id, g);
+    });
+    return map;
+  }, [goals]);
+
   const totalAllocated = useMemo(
     () => Object.values(allocations).reduce((sum, v) => sum + (parseFloat(v) || 0), 0),
     [allocations]
   );
-  const totalGoalAllocated = useMemo(
-    () => Object.values(goalAllocations).reduce((sum, v) => sum + (parseFloat(v) || 0), 0),
-    [goalAllocations]
-  );
   const income = parseFloat(totalIncome) || 0;
-  const remaining = income - totalAllocated - totalGoalAllocated;
+  const remaining = income - totalAllocated;
 
   async function handleGetRecommendation() {
     if (!income) return;
@@ -98,24 +100,6 @@ export function PlanPage() {
         newAllocations[item.category_id] = item.suggested_amount;
       });
       setAllocations(newAllocations);
-
-      // Предложенные сбережения распределяем пропорционально между активными
-      // целями, которым ещё не хватает суммы до цели.
-      const activeGoals = goals.filter((g) => g.status === "active");
-      const remainingNeeded = activeGoals.map((g) =>
-        Math.max(0, parseFloat(g.target_amount) - parseFloat(g.current_amount))
-      );
-      const totalNeeded = remainingNeeded.reduce((a, b) => a + b, 0);
-      const savingsTotal = parseFloat(rec.savings_total);
-
-      if (totalNeeded > 0 && savingsTotal > 0) {
-        const newGoalAllocations: Record<string, string> = { ...goalAllocations };
-        activeGoals.forEach((g, idx) => {
-          const share = (remainingNeeded[idx] / totalNeeded) * savingsTotal;
-          newGoalAllocations[g.id] = share.toFixed(0);
-        });
-        setGoalAllocations(newGoalAllocations);
-      }
     } finally {
       setRecLoading(false);
     }
@@ -133,9 +117,6 @@ export function PlanPage() {
         allocations: Object.entries(allocations)
           .filter(([, v]) => parseFloat(v) > 0)
           .map(([category_id, planned_amount]) => ({ category_id, planned_amount })),
-        goal_contributions: Object.entries(goalAllocations)
-          .filter(([, v]) => parseFloat(v) > 0)
-          .map(([goal_id, amount]) => ({ goal_id, amount })),
       });
       setSavedMessage("План сохранён!");
     } catch (err: any) {
@@ -208,7 +189,8 @@ export function PlanPage() {
             <Card>
               <h2 className="mb-1 text-base font-bold">Траты по категориям</h2>
               <p className="mb-2 text-xs text-textSecondary">
-                Сколько планируете потратить в каждой категории
+                Сколько планируете потратить в каждой категории — отчисление на цель (отмечено значком «Цель») тоже
+                считается тратой и учитывается в остатке
               </p>
               <div className="divide-y divide-border/60">
                 {categories.map((category) => (
@@ -218,31 +200,15 @@ export function PlanPage() {
                     currency={currency}
                     value={allocations[category.id] ?? ""}
                     onChange={(v) => setAllocations((prev) => ({ ...prev, [category.id]: v }))}
+                    goal={goalByCategoryId.get(category.id)}
                   />
                 ))}
               </div>
-            </Card>
-
-            <Card>
-              <h2 className="mb-1 text-base font-bold">Отчисления на цели</h2>
-              <p className="mb-2 text-xs text-textSecondary">
-                Сколько отложить в этом месяце на каждую цель
-              </p>
-              {goals.length === 0 ? (
-                <p className="py-3 text-sm text-textSecondary">
-                  У вас пока нет целей. Добавьте их в разделе «Настройки → Цели».
+              {goals.length === 0 && (
+                <p className="mt-3 text-xs text-textSecondary">
+                  Добавьте цель в разделе «Настройки → Цели» — она появится здесь как обычная категория, на которую
+                  можно запланировать сумму.
                 </p>
-              ) : (
-                <div className="divide-y divide-border/60">
-                  {goals.map((goal) => (
-                    <GoalAllocationRow
-                      key={goal.id}
-                      goal={goal}
-                      value={goalAllocations[goal.id] ?? ""}
-                      onChange={(v) => setGoalAllocations((prev) => ({ ...prev, [goal.id]: v }))}
-                    />
-                  ))}
-                </div>
               )}
             </Card>
 
@@ -252,8 +218,8 @@ export function PlanPage() {
                 <span className="font-semibold">{formatMoney(income, currency)}</span>
               </div>
               <div className="mt-1 flex items-center justify-between text-sm">
-                <span className="text-textSecondary">Траты + цели</span>
-                <span className="font-semibold">{formatMoney(totalAllocated + totalGoalAllocated, currency)}</span>
+                <span className="text-textSecondary">Траты и цели</span>
+                <span className="font-semibold">{formatMoney(totalAllocated, currency)}</span>
               </div>
               <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-sm">
                 <span className="font-semibold">Свободный остаток</span>

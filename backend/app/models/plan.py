@@ -2,13 +2,16 @@
 Месячный план (бюджет).
 
 MonthlyPlan — это "шапка" плана на конкретный месяц: сколько пользователь
-ожидает заработать (доход) и сколько хочет отложить на цели.
+ожидает заработать (доход).
 
 PlanAllocation — это строки таблицы плана: сколько денег выделено на каждую
-категорию трат в рамках этого месяца (например "Еда — 20 000 ₸").
-Сумма всех PlanAllocation + сумма отчислений на цели не должна превышать
-total_income — это проверяется в API (app/api/routes/plans.py), а не на
-уровне БД, чтобы можно было гибко менять правила в будущем.
+категорию трат в рамках этого месяца (например "Еда — 20 000 ₸"). Отчисления
+на цели — это точно такие же строки, но для служебной категории цели
+(Category.linked_goal_id) — плановую сумму сбережений на цель вводят в общем
+списке категорий, а не отдельным разделом (см. app/models/goal.py).
+Сумма всех PlanAllocation не должна превышать total_income — это проверяется
+на фронтенде (индикатор "Свободный остаток"), а не на уровне БД, чтобы можно
+было гибко менять правила в будущем.
 
 Один пользователь может иметь только один план на конкретный месяц —
 это обеспечено уникальным ограничением (user_id, month).
@@ -40,9 +43,6 @@ class MonthlyPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     user: Mapped["User"] = relationship(back_populates="plans")
     allocations: Mapped[list["PlanAllocation"]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan"
-    )
-    goal_contributions: Mapped[list["GoalContribution"]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
     )
 

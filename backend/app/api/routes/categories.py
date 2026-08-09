@@ -78,5 +78,10 @@ async def delete_category(
     db: AsyncSession = Depends(get_db),
 ):
     category = await _get_owned_category(category_id, current_user, db)
+    if category.linked_goal_id is not None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Это служебная категория цели накопления — удалите саму цель в разделе «Цели».",
+        )
     await db.delete(category)
     await db.commit()

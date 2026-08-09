@@ -34,6 +34,8 @@ export interface Category {
   color: string;
   is_preset: boolean;
   is_essential: boolean;
+  /** Заполнено, если это служебная категория конкретной цели накопления. */
+  linked_goal_id: string | null;
 }
 
 export interface PlanAllocation {
@@ -43,19 +45,12 @@ export interface PlanAllocation {
   category?: Category;
 }
 
-export interface PlanGoalContribution {
-  id: string;
-  goal_id: string;
-  amount: string;
-}
-
 export interface MonthlyPlan {
   id: string;
   month: string;
   currency: string;
   total_income: string;
   allocations: PlanAllocation[];
-  goal_contributions: PlanGoalContribution[];
 }
 
 export interface RecommendationCategoryItem {
@@ -85,16 +80,20 @@ export interface Goal {
   deadline: string | null;
   status: GoalStatus;
   progress_percent: number;
+  /** Служебная категория трат этой цели — пополнение = Transaction с этим category_id. */
+  category_id: string | null;
 }
 
-export interface GoalContribution {
+/**
+ * Пополнение цели — это обычная Transaction в её служебной категории (см.
+ * Goal.category_id). Этот тип собирается на клиенте из уже загруженного
+ * списка транзакций (см. pages/TrackerPage.tsx), отдельного API нет.
+ */
+export interface GoalContributionWithGoal {
   id: string;
   amount: string;
   contributed_on: string;
   note: string | null;
-}
-
-export interface GoalContributionWithGoal extends GoalContribution {
   goal_id: string;
   goal_name: string;
   goal_icon: string;

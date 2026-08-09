@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Lock, Plus, Trash2 } from "lucide-react";
+import { Lock, Plus, Target, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { Button } from "@/components/common/Button";
@@ -79,9 +79,20 @@ export function CategoriesPage() {
               >
                 <CategoryIcon name={c.icon} size={16} />
               </div>
-              <span className="flex-1 text-sm font-medium">{c.name}</span>
+              <span className="flex-1 text-sm font-medium">
+                {c.name}
+                {c.linked_goal_id && (
+                  <span className="ml-1.5 rounded-full bg-income/15 px-1.5 py-0.5 text-[10px] font-semibold text-income">
+                    Цель
+                  </span>
+                )}
+              </span>
               {c.is_preset ? (
                 <Lock size={16} className="text-textSecondary" />
+              ) : c.linked_goal_id ? (
+                <span title="Управляется в разделе «Цели»">
+                  <Target size={16} className="text-textSecondary" />
+                </span>
               ) : (
                 <button
                   onClick={() => handleDelete(c.id)}

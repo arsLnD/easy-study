@@ -1,26 +1,27 @@
-"""Роуты финансовых целей и пополнений (вкладов) в них."""
+"""
+Роуты финансовых целей.
+
+Пополнение цели больше не отдельная сущность — это обычная трата
+(Transaction) в служебной категории цели, поэтому все операции с
+пополнениями (создание/список/удаление) выполняются через
+POST/GET/DELETE /api/transactions (см. app/api/routes/transactions.py и
+_sync_goal_amount там же, которая пересчитывает Goal.current_amount).
+Этот файл отвечает только за сами цели и их служебную категорию.
+"""
 
 import uuid
-from datetime import date
-from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.goal import Goal, GoalContribution, GoalStatus
+from app.models.category import Category, CategoryType
+from app.models.goal import Goal
 from app.models.user import User
-from app.schemas.goal import (
-    GoalContributionCreate,
-    GoalContributionRead,
-    GoalContributionWithGoalRead,
-    GoalCreate,
-    GoalRead,
-    GoalUpdate,
-)
+from app.schemas.goal import GoalCreate, GoalRead, GoalUpdate
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -29,12 +30,13 @@ def _to_read_model(goal: Goal) -> GoalRead:
     progress = float(goal.current_amount) / float(goal.target_amount) * 100 if goal.target_amount else 0.0
     data = GoalRead.model_validate(goal)
     data.progress_percent = round(min(progress, 100.0), 1)
+    data.category_id = goal.category.id if goal.category else None
     return data
 
 
 async def _get_owned_goal(goal_id: uuid.UUID, current_user: User, db: AsyncSession) -> Goal:
     result = await db.execute(
-        select(Goal).options(selectinload(Goal.contributions)).where(Goal.id == goal_id)
+        select(Goal).options(selectinload(Goal.category)).where(Goal.id == goal_id)
     )
     goal = result.scalar_one_or_none()
     if goal is None or goal.user_id != current_user.id:
@@ -48,51 +50,13 @@ async def list_goals(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Goal).where(Goal.user_id == current_user.id).order_by(Goal.created_at.desc())
+        select(Goal)
+        .options(selectinload(Goal.category))
+        .where(Goal.user_id == current_user.id)
+        .order_by(Goal.created_at.desc())
     )
     goals = result.scalars().all()
     return [_to_read_model(g) for g in goals]
-
-
-@router.get("/contributions", response_model=list[GoalContributionWithGoalRead])
-async def list_all_contributions(
-    date_from: date | None = Query(default=None),
-    date_to: date | None = Query(default=None),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Пополнения ВСЕХ целей пользователя за период — используется в разделе
-    "Накопления" трекера, чтобы показать общую сумму отложенного за месяц без
-    отдельного запроса на каждую цель.
-    """
-    query = (
-        select(GoalContribution)
-        .join(Goal, Goal.id == GoalContribution.goal_id)
-        .options(selectinload(GoalContribution.goal))
-        .where(Goal.user_id == current_user.id)
-    )
-    if date_from is not None:
-        query = query.where(GoalContribution.contributed_on >= date_from)
-    if date_to is not None:
-        query = query.where(GoalContribution.contributed_on <= date_to)
-    query = query.order_by(GoalContribution.contributed_on.desc())
-
-    result = await db.execute(query)
-    contributions = result.scalars().all()
-    return [
-        GoalContributionWithGoalRead(
-            id=c.id,
-            amount=c.amount,
-            contributed_on=c.contributed_on,
-            note=c.note,
-            goal_id=c.goal_id,
-            goal_name=c.goal.name,
-            goal_icon=c.goal.icon,
-            goal_color=c.goal.color,
-        )
-        for c in contributions
-    ]
 
 
 @router.post("", response_model=GoalRead, status_code=status.HTTP_201_CREATED)
@@ -103,8 +67,26 @@ async def create_goal(
 ):
     goal = Goal(user_id=current_user.id, **payload.model_dump())
     db.add(goal)
+    await db.flush()
+
+    # Автоматически создаём служебную категорию трат для этой цели — именно
+    # в неё будут попадать "пополнения" (обычные Transaction), см. докстринг
+    # модуля выше.
+    category = Category(
+        user_id=current_user.id,
+        name=goal.name,
+        type=CategoryType.EXPENSE,
+        icon=goal.icon,
+        color=goal.color,
+        is_preset=False,
+        is_essential=False,
+        linked_goal_id=goal.id,
+    )
+    db.add(category)
+
     await db.commit()
     await db.refresh(goal)
+    goal.category = category
     return _to_read_model(goal)
 
 
@@ -118,6 +100,17 @@ async def update_goal(
     goal = await _get_owned_goal(goal_id, current_user, db)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(goal, field, value)
+
+    # Название/иконка/цвет должны совпадать со служебной категорией, чтобы
+    # она везде выглядела так же, как сама цель.
+    if goal.category is not None:
+        if "name" in payload.model_fields_set:
+            goal.category.name = goal.name
+        if "icon" in payload.model_fields_set:
+            goal.category.icon = goal.icon
+        if "color" in payload.model_fields_set:
+            goal.category.color = goal.color
+
     await db.commit()
     await db.refresh(goal)
     return _to_read_model(goal)
@@ -130,55 +123,11 @@ async def delete_goal(
     db: AsyncSession = Depends(get_db),
 ):
     goal = await _get_owned_goal(goal_id, current_user, db)
+    # Отвязываем категорию перед удалением цели (ondelete=SET NULL сделал бы
+    # то же самое на уровне БД, но делаем это явно на уровне ORM-объекта):
+    # история трат в категории сохраняется, категория просто становится
+    # обычной пользовательской, без привязки к цели.
+    if goal.category is not None:
+        goal.category.linked_goal_id = None
     await db.delete(goal)
-    await db.commit()
-
-
-@router.post("/{goal_id}/contributions", response_model=GoalRead, status_code=status.HTTP_201_CREATED)
-async def add_contribution(
-    goal_id: uuid.UUID,
-    payload: GoalContributionCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    goal = await _get_owned_goal(goal_id, current_user, db)
-    contribution = GoalContribution(goal_id=goal.id, **payload.model_dump())
-    db.add(contribution)
-
-    goal.current_amount = Decimal(goal.current_amount) + payload.amount
-    if goal.current_amount >= goal.target_amount and goal.status == GoalStatus.ACTIVE:
-        goal.status = GoalStatus.COMPLETED
-
-    await db.commit()
-    await db.refresh(goal)
-    return _to_read_model(goal)
-
-
-@router.get("/{goal_id}/contributions", response_model=list[GoalContributionRead])
-async def list_contributions(
-    goal_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    goal = await _get_owned_goal(goal_id, current_user, db)
-    return sorted(goal.contributions, key=lambda c: c.contributed_on, reverse=True)
-
-
-@router.delete("/{goal_id}/contributions/{contribution_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_contribution(
-    goal_id: uuid.UUID,
-    contribution_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    goal = await _get_owned_goal(goal_id, current_user, db)
-    contribution = next((c for c in goal.contributions if c.id == contribution_id), None)
-    if contribution is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пополнение не найдено")
-
-    goal.current_amount = max(Decimal("0"), Decimal(goal.current_amount) - Decimal(contribution.amount))
-    if goal.status == GoalStatus.COMPLETED and goal.current_amount < goal.target_amount:
-        goal.status = GoalStatus.ACTIVE
-
-    await db.delete(contribution)
     await db.commit()

@@ -35,29 +35,7 @@ class GoalRead(GoalBase):
     current_amount: Decimal
     status: GoalStatus
     progress_percent: float = 0.0
-
-
-class GoalContributionCreate(BaseModel):
-    amount: Decimal = Field(gt=0)
-    contributed_on: date
-    plan_id: uuid.UUID | None = None
-    note: str | None = Field(default=None, max_length=255)
-
-
-class GoalContributionRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: uuid.UUID
-    amount: Decimal
-    contributed_on: date
-    note: str | None = None
-
-
-class GoalContributionWithGoalRead(BaseModel):
-    id: uuid.UUID
-    amount: Decimal
-    contributed_on: date
-    note: str | None = None
-    goal_id: uuid.UUID
-    goal_name: str
-    goal_icon: str
-    goal_color: str
+    # Служебная категория трат этой цели (см. app/models/category.py) — чтобы
+    # пополнить цель, фронтенд создаёт обычную Transaction(type=expense) с
+    # этим category_id (см. POST /transactions).
+    category_id: uuid.UUID | None = None

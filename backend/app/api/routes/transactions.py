@@ -3,6 +3,13 @@
 таблицу "план vs факт" по категориям за произвольный период (день/неделя/
 месяц/свой диапазон — п.3 требований "каждую неделю/день/(выбранный
 промежуток времени)").
+
+Пополнение цели накопления — это обычная трата (Transaction) в служебной
+категории цели (Category.linked_goal_id, см. app/api/routes/goals.py).
+_sync_goal_amount ниже пересчитывает Goal.current_amount при создании,
+изменении и удалении такой операции, чтобы прогресс цели всегда совпадал с
+суммой реальных трат в её категории — без отдельной денормализованной
+сущности "пополнение", которую можно забыть обновить.
 """
 
 import uuid
@@ -16,7 +23,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.category import CategoryType
+from app.models.category import Category, CategoryType
+from app.models.goal import Goal, GoalStatus
 from app.models.plan import MonthlyPlan, PlanAllocation
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -29,6 +37,28 @@ from app.schemas.transaction import (
 )
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+async def _sync_goal_amount(
+    db: AsyncSession, category_id: uuid.UUID, delta: Decimal, user_id: uuid.UUID
+) -> None:
+    """Применяет +/- delta к Goal.current_amount, если category_id — категория цели."""
+    if delta == 0:
+        return
+    cat_result = await db.execute(select(Category.linked_goal_id).where(Category.id == category_id))
+    goal_id = cat_result.scalar_one_or_none()
+    if goal_id is None:
+        return
+    goal_result = await db.execute(select(Goal).where(Goal.id == goal_id, Goal.user_id == user_id))
+    goal = goal_result.scalar_one_or_none()
+    if goal is None:
+        return
+
+    goal.current_amount = max(Decimal("0"), Decimal(goal.current_amount) + delta)
+    if goal.current_amount >= goal.target_amount and goal.status == GoalStatus.ACTIVE:
+        goal.status = GoalStatus.COMPLETED
+    elif goal.current_amount < goal.target_amount and goal.status == GoalStatus.COMPLETED:
+        goal.status = GoalStatus.ACTIVE
 
 
 @router.get("", response_model=list[TransactionRead])
@@ -64,6 +94,8 @@ async def create_transaction(
 ):
     transaction = Transaction(user_id=current_user.id, **payload.model_dump())
     db.add(transaction)
+    if payload.type == CategoryType.EXPENSE:
+        await _sync_goal_amount(db, payload.category_id, Decimal(payload.amount), current_user.id)
     await db.commit()
     result = await db.execute(
         select(Transaction).options(selectinload(Transaction.category)).where(Transaction.id == transaction.id)
@@ -87,8 +119,23 @@ async def update_transaction(
     db: AsyncSession = Depends(get_db),
 ):
     transaction = await _get_owned_transaction(transaction_id, current_user, db)
+    old_category_id = transaction.category_id
+    old_amount = Decimal(transaction.amount)
+    was_expense = transaction.type == CategoryType.EXPENSE
+
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(transaction, field, value)
+
+    # Тип операции (доход/трата) сейчас не редактируется через этот эндпоинт
+    # (см. TransactionUpdate), поэтому was_expense == is_expense — но считаем
+    # дельту явно по старой/новой категории и сумме на случай, если это
+    # изменится в будущем.
+    is_expense = transaction.type == CategoryType.EXPENSE
+    if was_expense:
+        await _sync_goal_amount(db, old_category_id, -old_amount, current_user.id)
+    if is_expense:
+        await _sync_goal_amount(db, transaction.category_id, Decimal(transaction.amount), current_user.id)
+
     await db.commit()
     result = await db.execute(
         select(Transaction).options(selectinload(Transaction.category)).where(Transaction.id == transaction.id)
@@ -103,6 +150,8 @@ async def delete_transaction(
     db: AsyncSession = Depends(get_db),
 ):
     transaction = await _get_owned_transaction(transaction_id, current_user, db)
+    if transaction.type == CategoryType.EXPENSE:
+        await _sync_goal_amount(db, transaction.category_id, -Decimal(transaction.amount), current_user.id)
     await db.delete(transaction)
     await db.commit()
 

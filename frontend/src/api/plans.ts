@@ -16,7 +16,6 @@ export async function upsertPlan(payload: {
   currency: string;
   total_income: string;
   allocations: { category_id: string; planned_amount: string }[];
-  goal_contributions: { goal_id: string; amount: string }[];
 }): Promise<MonthlyPlan> {
   const { data } = await apiClient.put<MonthlyPlan>("/plans", payload);
   return data;

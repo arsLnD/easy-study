@@ -39,9 +39,19 @@ class Category(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Условно "обязательная" категория (жильё, еда) помогает рекомендательному
     # движку помечать её как приоритетную при расчёте бюджета 50/30/20.
     is_essential: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Если задано — это автослужебная категория конкретной цели накопления.
+    # Пополнение цели = обычная трата (Transaction) в этой категории, поэтому
+    # оно попадает в общий список операций и в план/факт, а не живёт отдельной
+    # сущностью "вне плана". unique=True, потому что у одной цели ровно одна
+    # категория. ondelete="SET NULL" — при удалении цели категория (и история
+    # трат в ней) не пропадает, просто перестаёт быть "целевой".
+    linked_goal_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("goals.id", ondelete="SET NULL"), unique=True, nullable=True
+    )
 
     user: Mapped["User"] = relationship(back_populates="categories")
     allocations: Mapped[list["PlanAllocation"]] = relationship(
         back_populates="category", cascade="all, delete-orphan"
     )
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="category")
+    linked_goal: Mapped["Goal | None"] = relationship(back_populates="category")

@@ -10,11 +10,13 @@ AI-версия рекомендации бюджета через DeepSeek (Ope
 "умную", но гарантированно рабочую.
 
 Мы намеренно доверяем модели только РАСПРЕДЕЛЕНИЕ СУММ (сколько денег на
-какую категорию и сколько отложить), а не классификацию категорий на
-"обязательные"/"необязательные" — эта классификация уже есть в данных
-(Category.is_essential) и пересчитывается на нашей стороне, чтобы итоговые
-essential_total/lifestyle_total были гарантированно консистентны с моделью
-данных, независимо от того, что вернула нейросеть.
+какую категорию, включая служебные категории целей накопления), а не
+классификацию категорий на "обязательные"/"необязательные"/"цель" — эта
+классификация уже есть в данных (Category.is_essential,
+Category.linked_goal_id) и пересчитывается на нашей стороне (essential_total/
+lifestyle_total/savings_total считаются из items по бакету), чтобы итоговые
+суммы были гарантированно консистентны с моделью данных, независимо от
+того, что вернула нейросеть.
 """
 
 import json
@@ -49,8 +51,13 @@ def _build_prompt(
     for c in categories:
         avg = history.get(c.id)
         avg_str = f", средние траты за последние месяцы: {avg:.0f} {currency}" if avg else ""
-        essential_str = "обязательная" if c.is_essential else "не обязательная"
-        categories_lines.append(f'- id="{c.id}", название="{c.name}" ({essential_str}){avg_str}')
+        if c.linked_goal_id is not None:
+            kind_str = "ЦЕЛЬ НАКОПЛЕНИЯ — сумма здесь = пополнение цели, а не трата"
+        elif c.is_essential:
+            kind_str = "обязательная трата"
+        else:
+            kind_str = "не обязательная трата"
+        categories_lines.append(f'- id="{c.id}", название="{c.name}" ({kind_str}){avg_str}')
 
     goals_lines = [
         f'- "{g["name"]}": накоплено {g["current"]:.0f} из {g["target"]:.0f} {g["currency"]}'
@@ -59,16 +66,17 @@ def _build_prompt(
 
     return (
         f"Пользователь планирует бюджет на месяц. Доход: {total_income:.0f} {currency}.\n\n"
-        f"Категории трат:\n" + "\n".join(categories_lines) + "\n\n"
+        f"Категории (среди них могут быть цели накопления):\n" + "\n".join(categories_lines) + "\n\n"
         f"Текущие финансовые цели пользователя:\n" + "\n".join(goals_lines) + "\n\n"
-        "Распредели доход по категориям трат разумно, с учётом истории трат (если она "
-        "есть) и здравого смысла, оставь адекватную сумму на сбережения (в идеале не "
-        "менее 10-20% дохода, если это реалистично при данном доходе и обязательных "
-        "тратах). Не превышай сумму дохода суммарно (траты + сбережения <= доход).\n\n"
+        "Распредели доход по категориям разумно, с учётом истории трат (если она есть) и "
+        "здравого смысла. Обязательно выдели суммы под категории-цели накопления (если они "
+        "есть в списке выше и у соответствующей цели ещё не хватает денег до её суммы) — в "
+        "идеале не менее 10-20% дохода суммарно на все цели, если это реалистично при данном "
+        "доходе и обязательных тратах. Не предлагай больше, чем цели не хватает до её суммы. "
+        "Не превышай сумму дохода суммарно по всем категориям (траты + цели <= доход).\n\n"
         "Ответь СТРОГО в формате JSON без пояснений вне JSON, вот такой структуры:\n"
         "{\n"
         '  "items": [ { "category_id": "<id из списка выше>", "suggested_amount": <число> }, ... ],\n'
-        '  "savings_total": <число>,\n'
         '  "explanation": "<короткое, дружелюбное объяснение на русском языке, 2-4 предложения, '
         'без markdown>"\n'
         "}"
@@ -122,6 +130,7 @@ async def get_ai_recommendation(
         items: list[RecommendationCategoryItem] = []
         essential_total = Decimal("0")
         lifestyle_total = Decimal("0")
+        savings_total = Decimal("0")
 
         for raw_item in parsed.get("items", []):
             category = categories_by_id.get(str(raw_item.get("category_id")))
@@ -130,7 +139,12 @@ async def get_ai_recommendation(
             amount = _round_money(Decimal(str(raw_item.get("suggested_amount", 0))))
             if amount <= 0:
                 continue
-            bucket = "essential" if category.is_essential else "lifestyle"
+            if category.linked_goal_id is not None:
+                bucket = "savings"
+            elif category.is_essential:
+                bucket = "essential"
+            else:
+                bucket = "lifestyle"
             items.append(
                 RecommendationCategoryItem(
                     category_id=category.id,
@@ -142,11 +156,11 @@ async def get_ai_recommendation(
             )
             if bucket == "essential":
                 essential_total += amount
-            else:
+            elif bucket == "lifestyle":
                 lifestyle_total += amount
+            else:
+                savings_total += amount
 
-        savings_total = _round_money(Decimal(str(parsed.get("savings_total", 0))))
-        savings_total = max(savings_total, Decimal("0"))
         explanation = str(parsed.get("explanation") or "").strip()
 
         if not items or not explanation:
@@ -155,10 +169,11 @@ async def get_ai_recommendation(
         logger.warning("DeepSeek recommendation response failed validation, falling back: %s", exc)
         return None
 
+    has_goal_categories = any(c.linked_goal_id is not None for c in categories)
+
     # Защита от "фантазий" модели: если сумма трат+сбережений превышает доход
-    # или сбережения меньше разумного минимума — пропорционально масштабируем.
-    spend_total = essential_total + lifestyle_total
-    grand_total = spend_total + savings_total
+    # — пропорционально масштабируем всё, включая сбережения.
+    grand_total = essential_total + lifestyle_total + savings_total
     if grand_total > total_income and grand_total > 0:
         scale = total_income / grand_total
         for item in items:
@@ -167,15 +182,27 @@ async def get_ai_recommendation(
         lifestyle_total = _round_money(lifestyle_total * scale)
         savings_total = _round_money(savings_total * scale)
 
+    # Минимальный порог сбережений применяем только если у пользователя ЕСТЬ
+    # категории целей, которые можно пополнить — иначе просто нечего скорее
+    # увеличивать (нет цели == нет смысла резервировать под неё сумму).
     min_savings = _round_money(total_income * SAVINGS_FLOOR_SHARE)
-    if savings_total < min_savings and (essential_total + lifestyle_total) > 0:
+    if has_goal_categories and savings_total < min_savings and (essential_total + lifestyle_total) > 0:
         shortfall = min_savings - savings_total
         scale = max(Decimal("0"), (essential_total + lifestyle_total - shortfall) / (essential_total + lifestyle_total))
         for item in items:
-            item.suggested_amount = _round_money(item.suggested_amount * scale)
+            if item.bucket != "savings":
+                item.suggested_amount = _round_money(item.suggested_amount * scale)
         essential_total = _round_money(essential_total * scale)
         lifestyle_total = _round_money(lifestyle_total * scale)
-        savings_total = min_savings
+        # Разницу от урезанных трат добавляем в первую попавшуюся категорию
+        # цели (пропорционально её недостающей сумме было бы точнее, но AI
+        # обычно уже сама разумно распределяет между несколькими целями).
+        savings_items = [i for i in items if i.bucket == "savings"]
+        if savings_items:
+            bump = shortfall / len(savings_items)
+            for item in savings_items:
+                item.suggested_amount = _round_money(item.suggested_amount + bump)
+            savings_total = min_savings
 
     return RecommendationResponse(
         essential_total=essential_total,
