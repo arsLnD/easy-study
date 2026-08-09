@@ -50,3 +50,14 @@ class GoalContributionRead(BaseModel):
     amount: Decimal
     contributed_on: date
     note: str | None = None
+
+
+class GoalContributionWithGoalRead(BaseModel):
+    id: uuid.UUID
+    amount: Decimal
+    contributed_on: date
+    note: str | None = None
+    goal_id: uuid.UUID
+    goal_name: str
+    goal_icon: str
+    goal_color: str

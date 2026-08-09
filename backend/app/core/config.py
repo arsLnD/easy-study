@@ -54,6 +54,15 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    # --- AI-рекомендации бюджета (DeepSeek, OpenAI-совместимый API) ---
+    # Если ключ не задан — приложение автоматически использует встроенный
+    # алгоритм (история трат / правило 50-30-20), см. app/services/recommendations.py.
+    # Получить ключ: platform.deepseek.com -> API keys (даётся бесплатный грант
+    # 5 млн токенов на 30 дней новым аккаунтам, дальше — очень дешёвый pay-as-you-go).
+    DEEPSEEK_API_KEY: str | None = None
+    DEEPSEEK_API_BASE: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

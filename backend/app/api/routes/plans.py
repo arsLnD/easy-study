@@ -45,8 +45,9 @@ async def get_recommendation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    currency = current_user.settings.default_currency if current_user.settings else "RUB"
     return await build_budget_recommendation(
-        db, current_user.id, payload.total_income, payload.month
+        db, current_user.id, payload.total_income, payload.month, currency
     )
 
 
@@ -98,7 +99,14 @@ async def upsert_plan(
     plan = result.scalar_one_or_none()
 
     if plan is None:
-        plan = MonthlyPlan(user_id=current_user.id, month=normalized_month)
+        # allocations=[]/goal_contributions=[] передаём явно при создании — иначе
+        # после await db.flush() объект становится "persistent", и обращение к
+        # ещё не установленным связям (plan.allocations и т.д. ниже) вызовет
+        # неявный lazy load, а он не поддерживается в асинхронном режиме
+        # SQLAlchemy без явного awaitable_attrs (упадёт с MissingGreenlet).
+        plan = MonthlyPlan(
+            user_id=current_user.id, month=normalized_month, allocations=[], goal_contributions=[]
+        )
         db.add(plan)
         await db.flush()
 

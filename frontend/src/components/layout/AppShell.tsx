@@ -9,7 +9,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto min-h-screen max-w-md bg-background pb-24">
+    <div className="mx-auto min-h-screen max-w-md bg-background pb-[calc(6.5rem+env(safe-area-inset-bottom))]">
       {children}
       <BottomNav />
     </div>

@@ -63,7 +63,7 @@ export interface RecommendationCategoryItem {
   category_name: string;
   suggested_amount: string;
   bucket: "essential" | "lifestyle" | "savings";
-  based_on: "history" | "rule_50_30_20";
+  based_on: "history" | "rule_50_30_20" | "ai";
 }
 
 export interface RecommendationResponse {
@@ -92,6 +92,13 @@ export interface GoalContribution {
   amount: string;
   contributed_on: string;
   note: string | null;
+}
+
+export interface GoalContributionWithGoal extends GoalContribution {
+  goal_id: string;
+  goal_name: string;
+  goal_icon: string;
+  goal_color: string;
 }
 
 export interface Transaction {
@@ -123,6 +130,7 @@ export interface PeriodSummary {
   total_planned: string;
   total_actual: string;
   total_income: string;
+  total_income_actual: string;
   categories: CategorySummaryItem[];
 }
 

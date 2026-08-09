@@ -1,9 +1,10 @@
 """Роуты финансовых целей и пополнений (вкладов) в них."""
 
 import uuid
+from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,6 +16,7 @@ from app.models.user import User
 from app.schemas.goal import (
     GoalContributionCreate,
     GoalContributionRead,
+    GoalContributionWithGoalRead,
     GoalCreate,
     GoalRead,
     GoalUpdate,
@@ -50,6 +52,47 @@ async def list_goals(
     )
     goals = result.scalars().all()
     return [_to_read_model(g) for g in goals]
+
+
+@router.get("/contributions", response_model=list[GoalContributionWithGoalRead])
+async def list_all_contributions(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Пополнения ВСЕХ целей пользователя за период — используется в разделе
+    "Накопления" трекера, чтобы показать общую сумму отложенного за месяц без
+    отдельного запроса на каждую цель.
+    """
+    query = (
+        select(GoalContribution)
+        .join(Goal, Goal.id == GoalContribution.goal_id)
+        .options(selectinload(GoalContribution.goal))
+        .where(Goal.user_id == current_user.id)
+    )
+    if date_from is not None:
+        query = query.where(GoalContribution.contributed_on >= date_from)
+    if date_to is not None:
+        query = query.where(GoalContribution.contributed_on <= date_to)
+    query = query.order_by(GoalContribution.contributed_on.desc())
+
+    result = await db.execute(query)
+    contributions = result.scalars().all()
+    return [
+        GoalContributionWithGoalRead(
+            id=c.id,
+            amount=c.amount,
+            contributed_on=c.contributed_on,
+            note=c.note,
+            goal_id=c.goal_id,
+            goal_name=c.goal.name,
+            goal_icon=c.goal.icon,
+            goal_color=c.goal.color,
+        )
+        for c in contributions
+    ]
 
 
 @router.post("", response_model=GoalRead, status_code=status.HTTP_201_CREATED)

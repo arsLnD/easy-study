@@ -1,5 +1,5 @@
 import { apiClient } from "@/api/client";
-import type { Goal, GoalContribution } from "@/types";
+import type { Goal, GoalContribution, GoalContributionWithGoal } from "@/types";
 
 export async function listGoals(): Promise<Goal[]> {
   const { data } = await apiClient.get<Goal[]>("/goals");
@@ -37,5 +37,15 @@ export async function addContribution(
 
 export async function listContributions(goalId: string): Promise<GoalContribution[]> {
   const { data } = await apiClient.get<GoalContribution[]>(`/goals/${goalId}/contributions`);
+  return data;
+}
+
+export async function listAllContributions(
+  dateFrom: string,
+  dateTo: string
+): Promise<GoalContributionWithGoal[]> {
+  const { data } = await apiClient.get<GoalContributionWithGoal[]>("/goals/contributions", {
+    params: { date_from: dateFrom, date_to: dateTo },
+  });
   return data;
 }

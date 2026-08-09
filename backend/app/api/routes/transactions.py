@@ -133,12 +133,15 @@ async def get_period_summary(
         .options(selectinload(Transaction.category))
         .where(
             Transaction.user_id == current_user.id,
-            Transaction.type == CategoryType.EXPENSE,
             Transaction.occurred_on >= period_start,
             Transaction.occurred_on <= period_end,
         )
     )
-    transactions = tx_result.scalars().all()
+    all_transactions = tx_result.scalars().all()
+    transactions = [tx for tx in all_transactions if tx.type == CategoryType.EXPENSE]
+    income_transactions = [tx for tx in all_transactions if tx.type == CategoryType.INCOME]
+
+    total_income_actual = sum((Decimal(tx.amount) for tx in income_transactions), Decimal("0"))
 
     actual_by_category: dict[uuid.UUID, Decimal] = {}
     for tx in transactions:
@@ -194,5 +197,6 @@ async def get_period_summary(
         total_planned=sum((c.planned_amount for c in categories), Decimal("0")),
         total_actual=sum((c.actual_amount for c in categories), Decimal("0")),
         total_income=plan.total_income if plan else Decimal("0"),
+        total_income_actual=total_income_actual,
         categories=sorted(categories, key=lambda c: c.actual_amount, reverse=True),
     )

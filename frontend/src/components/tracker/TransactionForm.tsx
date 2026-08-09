@@ -8,6 +8,7 @@ import { todayIso } from "@/utils/format";
 interface Props {
   categories: Category[];
   currency: string;
+  defaultDate?: string;
   onSubmit: (payload: {
     category_id: string;
     type: CategoryType;
@@ -18,12 +19,12 @@ interface Props {
   }) => Promise<void>;
 }
 
-export function TransactionForm({ categories, currency, onSubmit }: Props) {
+export function TransactionForm({ categories, currency, defaultDate, onSubmit }: Props) {
   const [type, setType] = useState<CategoryType>("expense");
   const [categoryId, setCategoryId] = useState("");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [occurredOn, setOccurredOn] = useState(todayIso());
+  const [occurredOn, setOccurredOn] = useState(defaultDate ?? todayIso());
   const [submitting, setSubmitting] = useState(false);
 
   const filteredCategories = categories.filter((c) => c.type === type);

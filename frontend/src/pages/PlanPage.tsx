@@ -39,6 +39,7 @@ export function PlanPage() {
   const [saving, setSaving] = useState(false);
   const [recLoading, setRecLoading] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -123,6 +124,7 @@ export function PlanPage() {
   async function handleSave() {
     setSaving(true);
     setSavedMessage(null);
+    setSaveError(null);
     try {
       await upsertPlan({
         month,
@@ -136,6 +138,13 @@ export function PlanPage() {
           .map(([goal_id, amount]) => ({ goal_id, amount })),
       });
       setSavedMessage("План сохранён!");
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status) {
+        setSaveError(`Не удалось сохранить план (код ${status}). Попробуйте ещё раз.`);
+      } else {
+        setSaveError("Не удалось связаться с сервером. Проверьте подключение к интернету и попробуйте ещё раз.");
+      }
     } finally {
       setSaving(false);
     }
@@ -185,7 +194,14 @@ export function PlanPage() {
                 {recLoading ? "Считаем..." : "Помочь распределить бюджет"}
               </Button>
               {recommendation && (
-                <p className="mt-3 text-xs leading-relaxed text-textSecondary">{recommendation.explanation}</p>
+                <p className="mt-3 text-xs leading-relaxed text-textSecondary">
+                  {recommendation.items[0]?.based_on === "ai" && (
+                    <span className="mr-1 rounded-full bg-primary/15 px-2 py-0.5 font-semibold text-primary">
+                      AI
+                    </span>
+                  )}
+                  {recommendation.explanation}
+                </p>
               )}
             </Card>
 
@@ -256,6 +272,7 @@ export function PlanPage() {
               {saving ? "Сохраняем..." : "Сохранить план"}
             </Button>
             {savedMessage && <p className="text-center text-sm text-income">{savedMessage}</p>}
+            {saveError && <p className="text-center text-sm text-expense">{saveError}</p>}
           </div>
         )}
       </div>

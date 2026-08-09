@@ -54,4 +54,5 @@ class PeriodSummary(BaseModel):
     total_planned: Decimal
     total_actual: Decimal
     total_income: Decimal
+    total_income_actual: Decimal
     categories: list[CategorySummaryItem]

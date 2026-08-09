@@ -36,8 +36,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category, CategoryType
+from app.models.goal import Goal, GoalStatus
 from app.models.transaction import Transaction
 from app.schemas.plan import RecommendationCategoryItem, RecommendationResponse
+from app.services.ai_recommendation import get_ai_recommendation
 
 ESSENTIAL_SHARE = Decimal("0.5")
 LIFESTYLE_SHARE = Decimal("0.3")
@@ -77,16 +79,52 @@ async def _get_recent_average_spending(
     return {row[0]: Decimal(row[1]) / HISTORY_MONTHS for row in result.all()}
 
 
+async def _get_active_goals_context(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
+    result = await db.execute(
+        select(Goal).where(Goal.user_id == user_id, Goal.status == GoalStatus.ACTIVE)
+    )
+    return [
+        {
+            "name": g.name,
+            "current": Decimal(g.current_amount),
+            "target": Decimal(g.target_amount),
+            "currency": g.currency,
+        }
+        for g in result.scalars().all()
+    ]
+
+
 async def build_budget_recommendation(
     db: AsyncSession,
     user_id: uuid.UUID,
     total_income: Decimal,
     reference_month: date | None = None,
+    currency: str = "RUB",
 ) -> RecommendationResponse:
+    """
+    Пытается получить рекомендацию от DeepSeek (если настроен API-ключ), а при
+    его отсутствии или любой ошибке запроса — молча откатывается на
+    детерминированный алгоритм ниже. Это гарантирует, что кнопка "Помочь
+    распределить бюджет" всегда что-то возвращает, независимо от доступности
+    внешнего AI-сервиса.
+    """
     reference_month = reference_month or date.today()
     categories = await _get_user_expense_categories(db, user_id)
     history = await _get_recent_average_spending(db, user_id, reference_month)
+    goals_context = await _get_active_goals_context(db, user_id)
 
+    ai_result = await get_ai_recommendation(total_income, currency, categories, history, goals_context)
+    if ai_result is not None:
+        return ai_result
+
+    return _build_rule_based_recommendation(categories, history, total_income)
+
+
+def _build_rule_based_recommendation(
+    categories: list[Category],
+    history: dict[uuid.UUID, Decimal],
+    total_income: Decimal,
+) -> RecommendationResponse:
     has_enough_history = sum(history.values(), Decimal("0")) > 0
 
     items: list[RecommendationCategoryItem] = []
