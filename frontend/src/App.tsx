@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { downloadLecture, previewDocumentHtml } from "./exportLecture";
+import * as notes from "./notes";
+import { getFolderName } from "./persist";
 import type { MaterialMeta, MaterialType, StructureResult, Subject } from "./types";
 
 const TABS: { id: MaterialType; label: string }[] = [
@@ -11,29 +13,6 @@ const TABS: { id: MaterialType; label: string }[] = [
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("ru-RU");
-}
-
-async function saveBundleToFolder() {
-  const picker = (window as Window & {
-    showDirectoryPicker?: (o: { mode: string }) => Promise<FileSystemDirectoryHandle>;
-  }).showDirectoryPicker;
-  if (!picker) {
-    throw new Error("Этот браузер не умеет писать в папку. Используй «На этот ПК».");
-  }
-  const root = await picker({ mode: "readwrite" });
-  const bundle = await api.exportBundle();
-  for (const file of bundle.files) {
-    const parts = file.relativePath.split("/");
-    let dir = root;
-    for (const part of parts.slice(0, -1)) {
-      dir = await dir.getDirectoryHandle(part, { create: true });
-    }
-    const handle = await dir.getFileHandle(parts[parts.length - 1]!, { create: true });
-    const writable = await handle.createWritable();
-    await writable.write(file.body);
-    await writable.close();
-  }
-  return bundle.files.length;
 }
 
 export function App() {
@@ -54,6 +33,7 @@ export function App() {
   const [apiKey, setApiKey] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [folderName, setFolderName] = useState("");
 
   const selected = subjects.find((s) => s.id === selectedId) ?? null;
   const materials = useMemo(
@@ -65,18 +45,24 @@ export function App() {
   );
 
   async function reload() {
-    const list = await api.subjects();
-    setSubjects(list);
-    setSelectedId((id) => (id && list.some((s) => s.id === id) ? id : list[0]?.id ?? null));
+    const snap = await notes.loadAll();
+    setSubjects(snap.subjects);
+    setSelectedId((id) => (id && snap.subjects.some((s) => s.id === id) ? id : snap.subjects[0]?.id ?? null));
   }
 
   async function afterLogin(name: string) {
+    notes.setNotesLogin(name);
     setLoginName(name);
     setError("");
     await reload();
-    const s = await api.settings();
-    setHasKey(s.hasKey);
-    setApiKey(s.openRouterApiKey || s.deepseekApiKey);
+    setFolderName(await getFolderName());
+    try {
+      const s = await api.settings();
+      setHasKey(s.hasKey);
+      setApiKey(s.openRouterApiKey || s.deepseekApiKey);
+    } catch {
+      /* ключ не обязателен для предметов */
+    }
   }
 
   useEffect(() => {
@@ -94,7 +80,7 @@ export function App() {
     if (!newName.trim()) return;
     try {
       setError("");
-      const s = await api.createSubject(newName);
+      const s = await notes.createSubject(newName);
       setNewName("");
       await reload();
       setSelectedId(s.id);
@@ -105,7 +91,7 @@ export function App() {
   }
 
   async function openMaterial(m: MaterialMeta) {
-    const data = await api.getMaterial(m.subjectId, m.id);
+    const data = await notes.getMaterial(m.subjectId, m.id);
     setOpenId(m.id);
     setTitle(data.meta.title);
     setBody(data.body);
@@ -114,7 +100,7 @@ export function App() {
 
   async function saveMaterial() {
     if (!selected || !openId) return;
-    await api.updateMaterial(selected.id, openId, { title, body });
+    await notes.updateMaterial(selected.id, openId, { title, body });
     await reload();
   }
 
@@ -276,10 +262,11 @@ export function App() {
               </button>
               <span className="muted">{hasKey ? "Ключ OpenRouter задан" : "Ключа нет — ИИ недоступен"}</span>
             </div>
-            <h2>Локальные файлы</h2>
+            <h2>Папка сохранения</h2>
             <p className="muted">
-              «На этот ПК» пишет папку C:\EASY-WORK\локальные-конспекты\{loginName}\ (предмет / тип /
-              файл.md). «Выбрать папку» — любая папка в Chrome / Opera GX.
+              Выбери папку на компьютере. Все предметы и конспекты будут писаться туда
+              автоматически (easy-study.json и файлы .md). Сейчас:{" "}
+              {folderName || "папка не выбрана"}.
             </p>
             <div className="toolbar">
               <button
@@ -287,21 +274,9 @@ export function App() {
                 type="button"
                 onClick={async () => {
                   try {
-                    const r = await api.exportLocal();
-                    setError(`Сохранено файлов: ${r.count} → ${r.dest}`);
-                  } catch (e) {
-                    setError((e as Error).message);
-                  }
-                }}
-              >
-                Сохранить все на этот ПК
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const n = await saveBundleToFolder();
-                    setError(`В выбранную папку записано файлов: ${n}`);
+                    const r = await notes.chooseSaveFolder();
+                    setFolderName(r.name);
+                    setError(`Папка «${r.name}»: записано файлов ${r.count}`);
                   } catch (e) {
                     if ((e as Error).name === "AbortError") return;
                     setError((e as Error).message);
@@ -309,6 +284,19 @@ export function App() {
                 }}
               >
                 Выбрать папку…
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const n = await notes.writeChosenFolder();
+                    setError(`В папку «${folderName}» записано файлов: ${n}`);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+              >
+                Сохранить сейчас
               </button>
             </div>
           </section>
@@ -323,7 +311,7 @@ export function App() {
                 onClick={async () => {
                   const name = window.prompt("Новое название предмета", selected.name);
                   if (!name?.trim()) return;
-                  await api.renameSubject(selected.id, name);
+                  await notes.renameSubject(selected.id, name);
                   await reload();
                 }}
               >
@@ -334,7 +322,7 @@ export function App() {
                 className="danger"
                 onClick={async () => {
                   if (!window.confirm("Удалить предмет и все материалы?")) return;
-                  await api.deleteSubject(selected.id);
+                  await notes.deleteSubject(selected.id);
                   setSelectedId(null);
                   await reload();
                 }}
@@ -374,7 +362,7 @@ export function App() {
                       e.stopPropagation();
                       void (async () => {
                         if (!window.confirm("Удалить материал?")) return;
-                        await api.deleteMaterial(selected.id, m.id);
+                        await notes.deleteMaterial(selected.id, m.id);
                         await reload();
                       })();
                     }}
@@ -450,7 +438,7 @@ export function App() {
                     const r = await api.structure(body);
                     setTitle(r.title);
                     setBody(r.structured);
-                    await api.updateMaterial(selected.id, openId, {
+                    await notes.updateMaterial(selected.id, openId, {
                       title: r.title,
                       body: r.structured,
                     });
@@ -490,7 +478,7 @@ export function App() {
           hasKey={hasKey}
           onClose={() => setImportOpen(false)}
           onSave={async (t, b) => {
-            await api.createMaterial(selected.id, tab, t, b);
+            await notes.createMaterial(selected.id, tab, t, b);
             await reload();
             setImportOpen(false);
           }}

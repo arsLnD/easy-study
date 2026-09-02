@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # СЕКРЕТ ОБЯЗАТЕЛЬНО меняется в .env перед продакшн-развёртыванием.
     JWT_SECRET_KEY: str = "change-this-secret-in-env-file-before-production"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # --- CORS: с каких адресов фронтенду разрешено обращаться к API ---

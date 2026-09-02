@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface FileSystemDirectoryHandle {
+  readonly name: string;
   getDirectoryHandle(
     name: string,
     options?: { create?: boolean },
@@ -9,6 +10,8 @@ interface FileSystemDirectoryHandle {
     name: string,
     options?: { create?: boolean },
   ): Promise<FileSystemFileHandle>;
+  queryPermission(descriptor?: { mode?: "read" | "readwrite" }): Promise<PermissionState>;
+  requestPermission(descriptor?: { mode?: "read" | "readwrite" }): Promise<PermissionState>;
 }
 
 interface FileSystemFileHandle {
