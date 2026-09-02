@@ -2,9 +2,18 @@ import { api } from "./api";
 import type { StructureResult } from "./types";
 
 const KEY = "easy_study_or_key";
+const SHARED = String(import.meta.env.VITE_OPENROUTER_API_KEY || "");
+
+export function hasSharedKey() {
+  return Boolean(SHARED);
+}
 
 export function loadOrKey() {
   return localStorage.getItem(KEY) || "";
+}
+
+function activeKey(userKey: string) {
+  return userKey.trim() || loadOrKey() || SHARED;
 }
 
 export function saveOrKey(key: string) {
@@ -76,20 +85,28 @@ async function structureOpenRouter(text: string, key: string): Promise<Structure
 
 export async function structureNotes(text: string, key: string): Promise<StructureResult> {
   try {
+    const res = await fetch("/api/ai-structure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (res.ok) return (await res.json()) as StructureResult;
+  } catch {
+    /* нет serverless — ниже OpenRouter */
+  }
+  const k = activeKey(key);
+  if (k) {
+    try {
+      return await structureOpenRouter(text, k);
+    } catch (e2) {
+      return structureLocally(text, `ИИ не ответил. Сделана нумерация. ${(e2 as Error).message}`);
+    }
+  }
+  try {
     return await api.structure(text);
   } catch (e) {
     const msg = (e as Error).message || "";
-    const k = key.trim() || loadOrKey();
-    if (k) {
-      try {
-        return await structureOpenRouter(text, k);
-      } catch (e2) {
-        return structureLocally(text, `ИИ не ответил. Сделана нумерация. ${(e2 as Error).message}`);
-      }
-    }
-    if (/not found|404/i.test(msg)) {
-      return structureLocally(text);
-    }
+    if (/not found|404/i.test(msg)) return structureLocally(text);
     return structureLocally(text, msg);
   }
 }

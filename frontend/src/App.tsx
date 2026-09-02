@@ -3,7 +3,7 @@ import { api } from "./api";
 import { downloadLecture, previewDocumentHtml } from "./exportLecture";
 import * as notes from "./notes";
 import { getFolderName } from "./persist";
-import { loadOrKey, saveOrKey, structureNotes } from "./structureClient";
+import { hasSharedKey, loadOrKey, saveOrKey, structureNotes } from "./structureClient";
 import type { MaterialMeta, MaterialType, StructureResult, Subject } from "./types";
 
 const TABS: { id: MaterialType; label: string }[] = [
@@ -59,7 +59,7 @@ export function App() {
     setFolderName(await getFolderName());
     const localKey = loadOrKey();
     setApiKey(localKey);
-    setHasKey(Boolean(localKey));
+    setHasKey(hasSharedKey() || Boolean(localKey));
     try {
       const s = await api.settings();
       const key = s.openRouterApiKey || s.deepseekApiKey || localKey;
@@ -249,7 +249,8 @@ export function App() {
           <section className="settings">
             <h1>Настройки</h1>
             <p className="muted">
-              Ключ OpenRouter общий для сервера. Конспекты — только твои, в data/users.
+              Для всех аккаунтов уже задан общий ключ OpenRouter. Свой ключ можно вписать ниже, если
+              захочешь заменить.
             </p>
             <input
               type="password"
@@ -263,7 +264,7 @@ export function App() {
                 type="button"
                 onClick={async () => {
                   saveOrKey(apiKey);
-                  setHasKey(Boolean(apiKey.trim()));
+                  setHasKey(hasSharedKey() || Boolean(apiKey.trim()));
                   try {
                     await api.saveSettings(apiKey);
                   } catch {
@@ -274,8 +275,8 @@ export function App() {
                 Сохранить ключ
               </button>
               <span className="muted">
-                {hasKey
-                  ? "Ключ OpenRouter сохранён в этом браузере"
+                {hasKey || hasSharedKey()
+                  ? "Общий ключ OpenRouter включён для всех"
                   : "Без ключа ИИ сделает простую нумерацию, слова не меняет"}
               </span>
             </div>
@@ -492,7 +493,7 @@ export function App() {
 
       {importOpen && selected && (
         <ImportModal
-          hasKey={hasKey}
+          hasKey={hasKey || hasSharedKey()}
           apiKey={apiKey}
           onClose={() => setImportOpen(false)}
           onSave={async (t, b) => {
