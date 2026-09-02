@@ -1,16 +1,3 @@
-# Blueprint для Render.com (https://render.com/docs/blueprint-spec).
-#
-# Как использовать:
-# 1. На render.com -> New -> Blueprint -> подключить GitHub-репозиторий plans-finance.
-# 2. Render сам найдёт этот файл и предложит создать сервис ниже.
-# 3. Единственное, что нужно будет вписать руками в Environment -> DATABASE_URL —
-#    это connection string от вашей БД (например, из Neon: https://neon.tech,
-#    бесплатный PostgreSQL, регистрация через GitHub).
-#    Формат: postgresql+asyncpg://<user>:<password>@<host>/<db>?ssl=require
-#
-# JWT_SECRET_KEY генерируется Render автоматически (generateValue: true) —
-# ничего вводить не нужно.
-
 services:
   - type: web
     name: plans-finance-backend
@@ -23,14 +10,8 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: DATABASE_URL
-        sync: false # вписать вручную в дашборде Render — connection string от Neon/другой БД
-      - key: JWT_SECRET_KEY
-        generateValue: true
-      - key: JWT_ALGORITHM
-        value: HS256
-      - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "30"
-      - key: REFRESH_TOKEN_EXPIRE_DAYS
-        value: "30"
+        sync: false
       - key: CORS_ORIGINS
-        value: "https://plans-finance.vercel.app" # замените на реальный домен фронтенда после деплоя на Vercel
+        value: "https://plans-finance.vercel.app"
+      - key: OPENROUTER_API_KEY
+        sync: false

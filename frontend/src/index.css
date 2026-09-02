@@ -1,59 +1,333 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+:root {
+  color-scheme: light;
+  --bg: #f3f1ec;
+  --paper: #fffcf7;
+  --ink: #1c1917;
+  --muted: #78716c;
+  --line: #e7e5e0;
+  --accent: #0f766e;
+  --accent-2: #134e4a;
+  --danger: #b91c1c;
+  --warn: #b45309;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
 
 html,
 body,
 #root {
-  height: 100%;
-}
-
-/*
- * Нижняя навигация зафиксирована (position: fixed) и не занимает место в
- * потоке документа. Без scroll-padding-bottom браузер, скроллящий элемент во
- * область видимости (например, после сабмита формы, фокуса на инпуте или
- * автоскролла), не учитывает, что фиксированная панель перекрывает низ
- * экрана — элемент может остаться "под" навигацией, и клики по нему
- * перехватываются панелью, а не самим элементом (баг: "кнопка не работает").
- * scroll-padding-bottom резервирует это пространство при любом скролле.
- */
-html {
-  scroll-padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
-}
-
-body {
-  @apply bg-background text-textPrimary antialiased;
-  font-family: "Manrope", "Inter", sans-serif;
-  /* Не даём тексту/интерфейсу выделяться при обычном тапе - привычнее для приложения */
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Тонкий скроллбар в тёмной теме, чтобы не бил по глазам светлой полосой */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-thumb {
-  background: #2a2a35;
-  border-radius: 999px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-input,
-button,
-select,
-textarea {
-  font-family: inherit;
-}
-
-/* Убираем стандартные стрелочки у числовых полей ввода сумм */
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
   margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
 }
-input[type="number"] {
-  -moz-appearance: textfield;
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #1c1917;
+  color: #fafaf9;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.brand {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.sidebar button.ghost,
+.sidebar button.primary,
+.toolbar button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.sidebar button.primary {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  min-width: 40px;
+}
+
+.sidebar .new-row {
+  display: flex;
+  gap: 8px;
+}
+
+.sidebar input,
+.editor-head input,
+.settings input,
+.modal textarea,
+.modal input {
+  width: 100%;
+  border: 1px solid #44403c;
+  background: #292524;
+  color: #fafaf9;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.editor-head input,
+.modal input,
+.modal textarea,
+.settings input {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.subject-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+}
+
+.subject-list button.item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 10px;
+}
+
+.subject-list button.item.active,
+.subject-list button.item:hover {
+  background: #292524;
+}
+
+.main {
+  padding: 24px 28px 40px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.tabs button {
+  border: 0;
+  background: #e7e5e0;
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
+.tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.cards {
+  display: grid;
+  gap: 10px;
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0 20px;
+}
+
+.toolbar .primary,
+.modal .primary,
+.settings .primary {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: calc(100vh - 120px);
+}
+
+.editor textarea {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--paper);
+  line-height: 1.5;
+}
+
+.editor-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.editor-head input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.editor-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-height: 0;
+}
+
+.editor-split textarea {
+  height: 100%;
+  min-height: 280px;
+}
+
+.preview {
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.preview h1 {
+  font-size: 22px;
+  margin: 0 0 12px;
+}
+
+.preview h2,
+.preview h3 {
+  margin: 16px 0 8px;
+}
+
+.preview ol {
+  padding-left: 1.3em;
+}
+
+.preview p {
+  margin: 8px 0;
+}
+
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 25, 23, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.modal {
+  background: #fff;
+  width: min(960px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.split textarea {
+  min-height: 280px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.warn {
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.settings {
+  max-width: 640px;
+}
+
+.auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-box {
+  width: min(420px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-box input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
 }

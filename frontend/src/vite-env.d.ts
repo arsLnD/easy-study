@@ -1,9 +1,16 @@
 /// <reference types="vite/client" />
 
-interface ImportMetaEnv {
-  readonly VITE_API_BASE_URL: string;
+interface FileSystemDirectoryHandle {
+  getDirectoryHandle(
+    name: string,
+    options?: { create?: boolean },
+  ): Promise<FileSystemDirectoryHandle>;
+  getFileHandle(
+    name: string,
+    options?: { create?: boolean },
+  ): Promise<FileSystemFileHandle>;
 }
 
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
+interface FileSystemFileHandle {
+  createWritable(): Promise<{ write: (d: string) => Promise<void>; close: () => Promise<void> }>;
 }

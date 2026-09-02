@@ -1,0 +1,14 @@
+{
+  "name": "study-notes-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx server/index.ts"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "tsx": "^4.19.2"
+  }
+}
