@@ -3,6 +3,7 @@ import { api } from "./api";
 import { downloadLecture, previewDocumentHtml } from "./exportLecture";
 import * as notes from "./notes";
 import { getFolderName } from "./persist";
+import { loadOrKey, saveOrKey, structureNotes } from "./structureClient";
 import type { MaterialMeta, MaterialType, StructureResult, Subject } from "./types";
 
 const TABS: { id: MaterialType; label: string }[] = [
@@ -56,12 +57,19 @@ export function App() {
     setError("");
     await reload();
     setFolderName(await getFolderName());
+    const localKey = loadOrKey();
+    setApiKey(localKey);
+    setHasKey(Boolean(localKey));
     try {
       const s = await api.settings();
-      setHasKey(s.hasKey);
-      setApiKey(s.openRouterApiKey || s.deepseekApiKey);
+      const key = s.openRouterApiKey || s.deepseekApiKey || localKey;
+      if (key) {
+        saveOrKey(key);
+        setApiKey(key);
+      }
+      setHasKey(Boolean(key || s.hasKey));
     } catch {
-      /* ключ не обязателен для предметов */
+      /* ключ хранится в браузере */
     }
   }
 
@@ -254,13 +262,22 @@ export function App() {
                 className="primary"
                 type="button"
                 onClick={async () => {
-                  const r = await api.saveSettings(apiKey);
-                  setHasKey(r.hasKey);
+                  saveOrKey(apiKey);
+                  setHasKey(Boolean(apiKey.trim()));
+                  try {
+                    await api.saveSettings(apiKey);
+                  } catch {
+                    /* ключ всё равно в этом браузере */
+                  }
                 }}
               >
                 Сохранить ключ
               </button>
-              <span className="muted">{hasKey ? "Ключ OpenRouter задан" : "Ключа нет — ИИ недоступен"}</span>
+              <span className="muted">
+                {hasKey
+                  ? "Ключ OpenRouter сохранён в этом браузере"
+                  : "Без ключа ИИ сделает простую нумерацию, слова не меняет"}
+              </span>
             </div>
             <h2>Папка сохранения</h2>
             <p className="muted">
@@ -435,7 +452,7 @@ export function App() {
                 onClick={async () => {
                   setAiBusy(true);
                   try {
-                    const r = await api.structure(body);
+                    const r = await structureNotes(body, apiKey);
                     setTitle(r.title);
                     setBody(r.structured);
                     await notes.updateMaterial(selected.id, openId, {
@@ -476,6 +493,7 @@ export function App() {
       {importOpen && selected && (
         <ImportModal
           hasKey={hasKey}
+          apiKey={apiKey}
           onClose={() => setImportOpen(false)}
           onSave={async (t, b) => {
             await notes.createMaterial(selected.id, tab, t, b);
@@ -490,10 +508,12 @@ export function App() {
 
 function ImportModal({
   hasKey,
+  apiKey,
   onClose,
   onSave,
 }: {
   hasKey: boolean;
+  apiKey: string;
   onClose: () => void;
   onSave: (title: string, body: string) => Promise<void>;
 }) {
@@ -509,7 +529,7 @@ function ImportModal({
     setBusy(true);
     setMsg("");
     try {
-      const r = await api.structure(raw);
+      const r = await structureNotes(raw, apiKey);
       setPreview(r);
       setTitle(r.title);
       setStructured(r.structured);
@@ -556,7 +576,10 @@ function ImportModal({
         </div>
         {msg && <div className="warn">{msg}</div>}
         {!hasKey && (
-          <div className="muted">Ключа OpenRouter нет — можно сохранить исходник как есть.</div>
+          <div className="muted">
+            Ключ OpenRouter не задан — кнопка ИИ пронумерует текст без смены слов. Ключ можно
+            вставить в Настройках.
+          </div>
         )}
         <div className="toolbar">
           <button className="primary" type="button" disabled={busy || !raw.trim()} onClick={() => void runAi()}>
