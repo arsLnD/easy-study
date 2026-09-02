@@ -118,12 +118,17 @@ export function App() {
     await reload();
   }
 
-  async function submitAuth(kind: "login" | "register") {
+  async function submitAuth(kind: "login" | "register", form?: HTMLFormElement | null) {
+    const fd = form ? new FormData(form) : null;
+    const login = String(fd?.get("username") || authLogin || "").trim();
+    const password = String(fd?.get("password") || authPass || "");
+    setAuthLogin(login);
+    setAuthPass(password);
     setAuthBusy(true);
     setError("");
     try {
       const fn = kind === "login" ? api.login : api.register;
-      const r = await fn(authLogin, authPass);
+      const r = await fn(login, password);
       await afterLogin(r.login);
     } catch (e) {
       setError((e as Error).message);
@@ -139,30 +144,40 @@ export function App() {
           className="auth-box"
           onSubmit={(e) => {
             e.preventDefault();
-            void submitAuth("login");
+            void submitAuth("login", e.currentTarget);
           }}
         >
           <h1>Easy Study</h1>
-          <p className="muted">Логин латиницей. Пароль не короче 8 символов.</p>
+          <p className="muted">Логин латиницей без пробелов. Пароль не короче 8 символов.</p>
           {error && <p className="warn">{error}</p>}
           <input
+            name="username"
             placeholder="Логин"
             value={authLogin}
             onChange={(e) => setAuthLogin(e.target.value)}
             autoComplete="username"
+            required
+            minLength={3}
           />
           <input
+            name="password"
             type="password"
             placeholder="Пароль (минимум 8 символов)"
             value={authPass}
             onChange={(e) => setAuthPass(e.target.value)}
-            autoComplete="current-password"
+            autoComplete="new-password"
+            required
+            minLength={8}
           />
           <div className="toolbar">
             <button className="primary" type="submit" disabled={authBusy}>
               Войти
             </button>
-            <button type="button" disabled={authBusy} onClick={() => void submitAuth("register")}>
+            <button
+              type="button"
+              disabled={authBusy}
+              onClick={(e) => void submitAuth("register", e.currentTarget.form)}
+            >
               Регистрация
             </button>
           </div>

@@ -42,9 +42,23 @@ function req(url: string, init?: RequestInit) {
 }
 
 function accountPayload(login: string, password: string) {
-  const name = login.trim();
-  const email = name.includes("@") ? name.toLowerCase() : `${name.toLowerCase()}@easy-study.app`;
-  return { login: name, email, password, full_name: name };
+  const local = login
+    .trim()
+    .split("@")[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "");
+  if (local.length < 3) {
+    throw new Error("Логин: минимум 3 латинских буквы/цифры, без пробелов и без @");
+  }
+  if (password.length < 8) {
+    throw new Error("Пароль минимум 8 символов");
+  }
+  return {
+    login: local,
+    email: `${local}@easy-study.app`,
+    password,
+    full_name: local,
+  };
 }
 
 function saveAuth(r: { login?: string; access_token?: string }, fallback: string) {
