@@ -1,5 +1,18 @@
 import type { MaterialType, StructureResult, Subject } from "./types";
 
+const TOKEN = "easy_study_token";
+
+function failMessage(data: { error?: string; detail?: unknown }, status: number) {
+  const d = data.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    return d
+      .map((x) => (typeof x === "object" && x && "msg" in x ? String((x as { msg: string }).msg) : JSON.stringify(x)))
+      .join("; ");
+  }
+  return data.error || `Ошибка ${status}`;
+}
+
 async function json<T>(input: Response | Promise<Response>): Promise<T> {
   let res: Response;
   try {
@@ -11,34 +24,57 @@ async function json<T>(input: Response | Promise<Response>): Promise<T> {
     }
     throw e instanceof Error ? e : new Error(msg);
   }
-  const data = (await res.json()) as T & { error?: string };
-  if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
+  const data = (await res.json()) as T & { error?: string; detail?: unknown };
+  if (!res.ok) throw new Error(failMessage(data, res.status));
   return data;
 }
 
 function req(url: string, init?: RequestInit) {
-  return fetch(url, { credentials: "include", ...init });
+  const headers = new Headers(init?.headers);
+  const token = localStorage.getItem(TOKEN);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(url, { ...init, credentials: "include", headers });
+}
+
+function saveAuth(r: { login?: string; access_token?: string }, fallback: string) {
+  if (r.access_token) localStorage.setItem(TOKEN, r.access_token);
+  return { login: r.login || fallback };
 }
 
 export const api = {
-  me: () => json<{ login: string }>(req("/api/auth/me")),
-  register: (login: string, password: string) =>
-    json<{ login: string }>(
+  me: async () => {
+    const u = await json<{ login?: string; full_name?: string; email?: string }>(req("/api/auth/me"));
+    return { login: u.login || u.full_name || (u.email || "").split("@")[0] };
+  },
+  register: async (login: string, password: string) => {
+    const r = await json<{ login?: string; access_token?: string }>(
       req("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login, password }),
+        body: JSON.stringify({ login, password, full_name: login }),
       }),
-    ),
-  login: (login: string, password: string) =>
-    json<{ login: string }>(
+    );
+    return saveAuth(r, login);
+  },
+  login: async (login: string, password: string) => {
+    const r = await json<{ login?: string; access_token?: string }>(
       req("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login, password }),
       }),
-    ),
-  logout: () => json<{ ok: boolean }>(req("/api/auth/logout", { method: "POST" })),
+    );
+    return saveAuth(r, login);
+  },
+  logout: async () => {
+    localStorage.removeItem(TOKEN);
+    try {
+      await json<{ ok: boolean }>(req("/api/auth/logout", { method: "POST" }));
+    } catch {
+      /* token already cleared */
+    }
+    return { ok: true };
+  },
   exportBundle: () => json<{ files: { relativePath: string; body: string }[] }>(req("/api/export-bundle")),
   exportLocal: () => json<{ dest: string; count: number }>(req("/api/export-local", { method: "POST" })),
   settings: () =>

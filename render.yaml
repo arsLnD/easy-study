@@ -12,6 +12,6 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
-        value: "https://plans-finance.vercel.app"
+        value: "https://easy-study.vercel.app,https://plans-finance.vercel.app"
       - key: OPENROUTER_API_KEY
         sync: false

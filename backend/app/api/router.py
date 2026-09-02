@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.routes import auth, categories, goals, plans, quotes, transactions, users
+from app.api.routes import auth, categories, goals, plans, quotes, study, transactions, users
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -12,3 +12,4 @@ api_router.include_router(plans.router)
 api_router.include_router(goals.router)
 api_router.include_router(transactions.router)
 api_router.include_router(quotes.router)
+api_router.include_router(study.router)

@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.database import Base, engine
+from app.models.study import StudyMaterial, StudySettings, StudySubject  # noqa: F401
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -28,6 +30,12 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+
+@app.on_event("startup")
+async def _study_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 @app.get("/api/health", tags=["health"])

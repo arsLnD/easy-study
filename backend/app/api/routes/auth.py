@@ -31,16 +31,35 @@ from app.schemas.user import RefreshRequest, TokenPair, UserCreate, UserLogin, U
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _account_email(login: str | None, email: str | None) -> str:
+    if email:
+        return str(email).lower()
+    if login:
+        raw = login.strip().lower()
+        return raw if "@" in raw else f"{raw}@easy-study.app"
+    raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Укажи логин")
+
+
+def _account_name(login: str | None, full_name: str | None, email: str) -> str:
+    if full_name and full_name.strip():
+        return full_name.strip()
+    if login and login.strip():
+        return login.strip()
+    return email.split("@")[0]
+
+
 @router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.email == payload.email))
+    email = _account_email(payload.login, payload.email)
+    existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Пользователь с таким email уже зарегистрирован")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Такой логин уже есть")
 
+    display = _account_name(payload.login, payload.full_name, email)
     user = User(
-        email=payload.email,
+        email=email,
         hashed_password=hash_password(payload.password),
-        full_name=payload.full_name,
+        full_name=display,
     )
     db.add(user)
     await db.flush()  # получаем user.id до commit
@@ -51,22 +70,25 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     return TokenPair(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
+        login=display,
     )
 
 
 @router.post("/login", response_model=TokenPair)
 async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == payload.email))
+    email = _account_email(payload.login, payload.email)
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный логин или пароль")
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Учётная запись отключена")
 
     return TokenPair(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
+        login=user.full_name or email.split("@")[0],
     )
 
 
@@ -89,6 +111,7 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
     return TokenPair(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
+        login=user.full_name or user.email.split("@")[0],
     )
 
 
