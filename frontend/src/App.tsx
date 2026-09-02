@@ -143,7 +143,7 @@ export function App() {
           }}
         >
           <h1>Easy Study</h1>
-          <p className="muted">Войди или зарегистрируйся. Данные каждого логина хранятся отдельно.</p>
+          <p className="muted">Логин латиницей. Пароль не короче 8 символов.</p>
           {error && <p className="warn">{error}</p>}
           <input
             placeholder="Логин"
@@ -153,7 +153,7 @@ export function App() {
           />
           <input
             type="password"
-            placeholder="Пароль"
+            placeholder="Пароль (минимум 8 символов)"
             value={authPass}
             onChange={(e) => setAuthPass(e.target.value)}
             autoComplete="current-password"

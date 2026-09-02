@@ -7,7 +7,12 @@ function failMessage(data: { error?: string; detail?: unknown }, status: number)
   if (typeof d === "string") return d;
   if (Array.isArray(d)) {
     return d
-      .map((x) => (typeof x === "object" && x && "msg" in x ? String((x as { msg: string }).msg) : JSON.stringify(x)))
+      .map((x) => {
+        if (typeof x !== "object" || !x) return JSON.stringify(x);
+        const loc = "loc" in x ? (x as { loc: unknown[] }).loc.filter((p) => p !== "body").join(".") : "";
+        const msg = "msg" in x ? String((x as { msg: string }).msg) : JSON.stringify(x);
+        return loc ? `${loc}: ${msg}` : msg;
+      })
       .join("; ");
   }
   return data.error || `Ошибка ${status}`;
@@ -36,6 +41,12 @@ function req(url: string, init?: RequestInit) {
   return fetch(url, { ...init, credentials: "include", headers });
 }
 
+function accountPayload(login: string, password: string) {
+  const name = login.trim();
+  const email = name.includes("@") ? name.toLowerCase() : `${name.toLowerCase()}@easy-study.app`;
+  return { login: name, email, password, full_name: name };
+}
+
 function saveAuth(r: { login?: string; access_token?: string }, fallback: string) {
   if (r.access_token) localStorage.setItem(TOKEN, r.access_token);
   return { login: r.login || fallback };
@@ -51,7 +62,7 @@ export const api = {
       req("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login, password, full_name: login }),
+        body: JSON.stringify(accountPayload(login, password)),
       }),
     );
     return saveAuth(r, login);
@@ -61,7 +72,7 @@ export const api = {
       req("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login, password }),
+        body: JSON.stringify(accountPayload(login, password)),
       }),
     );
     return saveAuth(r, login);
