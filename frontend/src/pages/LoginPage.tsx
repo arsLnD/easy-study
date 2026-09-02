@@ -6,9 +6,6 @@ import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
 import { useAuthStore } from "@/store/authStore";
 
-// Бесплатный хостинг backend'а "засыпает" при неактивности и просыпается
-// до ~40 секунд на первый запрос — показываем пояснение, чтобы это не
-// выглядело как зависший/сломанный сайт.
 const SLOW_SERVER_HINT_DELAY_MS = 4000;
 
 export function LoginPage() {
@@ -34,7 +31,7 @@ export function LoginPage() {
       setTokens(tokens.access_token, tokens.refresh_token);
       const user = await fetchMe();
       setUser(user);
-      navigate("/plan");
+      navigate("/");
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 401) {
@@ -57,7 +54,7 @@ export function LoginPage() {
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
           <Wallet2 size={28} />
         </div>
-        <h1 className="text-2xl font-extrabold">Plans/Finance</h1>
+        <h1 className="text-2xl font-extrabold">Easy Study</h1>
         <p className="text-center text-sm text-textSecondary">
           Планируйте бюджет, копите на цели и контролируйте траты
         </p>

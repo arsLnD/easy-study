@@ -110,7 +110,7 @@ async function callModel(apiKey: string, model: string, snippet: string) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "http://127.0.0.1:5173",
-        "X-Title": "Uchebnye konspekty",
+        "X-Title": "Easy Study",
       },
       signal: ctrl.signal,
       body: JSON.stringify({

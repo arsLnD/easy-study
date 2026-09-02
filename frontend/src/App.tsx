@@ -142,7 +142,7 @@ export function App() {
             void submitAuth("login");
           }}
         >
-          <h1>Учебные конспекты</h1>
+          <h1>Easy Study</h1>
           <p className="muted">Войди или зарегистрируйся. Данные каждого логина хранятся отдельно.</p>
           {error && <p className="warn">{error}</p>}
           <input
@@ -174,7 +174,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <div className="brand">Учебные конспекты</div>
+        <div className="brand">Easy Study</div>
         <div className="muted" style={{ fontSize: 13 }}>
           {loginName}
         </div>
